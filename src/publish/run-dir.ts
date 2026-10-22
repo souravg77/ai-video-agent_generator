@@ -3,7 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { normalizeScript, type VideoScript } from "../pipeline/script.js";
 
-export type RenderedRun = { dir: string; videoPath: string; script: VideoScript; videoId?: string };
+export type RenderedRun = { dir: string; videoPath: string; script: VideoScript; videoId?: string; url?: string };
 
 // Loads a folder written by `npm run make`. With no dir, picks the newest folder under outRoot.
 export async function loadRun(dir?: string, outRoot = "out"): Promise<RenderedRun> {
@@ -20,6 +20,6 @@ export async function loadRun(dir?: string, outRoot = "out"): Promise<RenderedRu
   if (!existsSync(videoPath)) throw new Error(`${videoPath} not found.`);
   const script = normalizeScript(JSON.parse(await readFile(join(dir, "script.json"), "utf8")) as VideoScript);
   const resultPath = join(dir, "result.json");
-  const result = existsSync(resultPath) ? (JSON.parse(await readFile(resultPath, "utf8")) as { videoId?: string }) : {};
-  return { dir, videoPath, script, videoId: result.videoId };
+  const result = existsSync(resultPath) ? (JSON.parse(await readFile(resultPath, "utf8")) as { videoId?: string; url?: string }) : {};
+  return { dir, videoPath, script, videoId: result.videoId, url: result.url };
 }

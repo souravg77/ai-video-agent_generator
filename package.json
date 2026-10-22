@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "make": "tsx scripts/make-video.ts",
     "test": "tsx --test test/*.test.ts",
-    "post:youtube": "tsx scripts/post-youtube.ts"
+    "post:youtube": "tsx scripts/post-youtube.ts",
+    "post": "tsx scripts/post.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",
