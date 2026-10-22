@@ -20,6 +20,7 @@ Work in the `souravg77/ai-video-agent_generator` checkout. Check `.env` (or `bra
 | Results | `npm run stats` (snapshot now), `npm run report` (`--days 7`, `--send`) |
 | Comment replies | `npm run comments`, then approve the drafts on the review page |
 | Health | `npm run check`, `npm run typecheck`, `npm test` |
+| Switch a step between local and an API | `npm run setup` (the user runs it in their own terminal) |
 
 ## How the agent decides
 
@@ -61,7 +62,7 @@ Start by reading the exact error, from the alert, the `videos.error` / `posts.er
 | The local model's answer didn't match the format | Use a larger `OLLAMA_MODEL`, or raise `OLLAMA_CONTEXT` for long videos |
 | Piper not found or voice missing | `npm run local:setup`, or set `PIPER_PATH` / `PIPER_VOICE` |
 | "No video clips in footage/" | Add clips, or set `VISUALS_PROVIDER=generated` |
-| Missing `PEXELS_API_KEY` / `ELEVENLABS_API_KEY` | Add the key, or switch that step to local (`docs/local-mode.md`) |
+| Missing `PEXELS_API_KEY` / `ELEVENLABS_API_KEY` | Add the key, or switch that step to local with `npm run setup` |
 | Nothing gets planned | `AGENT_NICHE` is empty, or the budget cap was reached (check the alerts) |
 | Video marked failed after 3 tries | Fix the cause, then press **Retry** on the review page |
 | Captions show boxes | Set `CAPTION_FONT` to a font that covers the language, for example `Noto Sans CJK JP` |
