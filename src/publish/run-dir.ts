@@ -1,0 +1,25 @@
+import { existsSync } from "node:fs";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { normalizeScript, type VideoScript } from "../pipeline/script.js";
+
+export type RenderedRun = { dir: string; videoPath: string; script: VideoScript; videoId?: string };
+
+// Loads a folder written by `npm run make`. With no dir, picks the newest folder under outRoot.
+export async function loadRun(dir?: string, outRoot = "out"): Promise<RenderedRun> {
+  if (!dir) {
+    if (!existsSync(outRoot)) throw new Error(`No ${outRoot}/ folder yet. Make a video first with \`npm run make\`.`);
+    const runs = (await readdir(outRoot, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+    // Folder names start with an ISO timestamp, so the last one is the newest.
+    const latest = runs.filter((r) => existsSync(join(outRoot, r, "video.mp4"))).at(-1);
+    if (!latest) throw new Error(`No finished video found under ${outRoot}/.`);
+    dir = join(outRoot, latest);
+  }
+
+  const videoPath = join(dir, "video.mp4");
+  if (!existsSync(videoPath)) throw new Error(`${videoPath} not found.`);
+  const script = normalizeScript(JSON.parse(await readFile(join(dir, "script.json"), "utf8")) as VideoScript);
+  const resultPath = join(dir, "result.json");
+  const result = existsSync(resultPath) ? (JSON.parse(await readFile(resultPath, "utf8")) as { videoId?: string }) : {};
+  return { dir, videoPath, script, videoId: result.videoId };
+}
