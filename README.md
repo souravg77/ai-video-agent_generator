@@ -2,7 +2,7 @@
 
 Generates short vertical videos (script → voice → render) and posts them to YouTube, Facebook Page Reels and Instagram Reels, with a human approval step.
 
-Status: **Phase 2** (make a video, post it to YouTube). Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
+Status: **Phase 3** (make a video, post it to YouTube, Facebook and Instagram). Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
 
 ## Setup
 
@@ -34,7 +34,20 @@ How it works:
 
 Needs `ANTHROPIC_API_KEY`, `ELEVENLABS_API_KEY` and `PEXELS_API_KEY`; storage and database are optional.
 
-## Post to YouTube
+## Post to all platforms
+
+```sh
+npm run post                                             # newest video in out/ to YouTube, Facebook and Instagram
+npm run post -- --to youtube,facebook                    # pick platforms
+npm run post -- --to youtube,facebook --schedule 2026-11-01T15:00:00Z
+```
+
+- **Facebook**: uploaded straight from your computer as a Page Reel. Can be scheduled 10 minutes to 29 days ahead.
+- **Instagram**: Instagram downloads the video from a public link, so R2 storage with a public URL is required (the video is uploaded there automatically). Instagram's API can't schedule; `--schedule` with Instagram is refused, and the phase 4 agent posts Instagram at the right time instead.
+- Captions are the script's description plus hashtags (Instagram: up to 2,200 characters and 30 hashtags).
+- If one platform fails, the others still post. Each result is saved next to the video (`youtube.json`, `facebook.json`, `instagram.json`) and in the `posts` table.
+
+## Post to YouTube only
 
 ```sh
 npm run post:youtube                                     # newest video in out/, uploaded as private
@@ -54,6 +67,7 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | Command | What it does |
 | --- | --- |
 | `npm run make -- --topic "…"` | Generates a video (see above) |
+| `npm run post` | Posts a finished video to YouTube, Facebook and Instagram |
 | `npm run post:youtube` | Uploads a finished video to YouTube (see above) |
 | `npm test` | Unit tests |
 | `npm run check` | Lists missing settings and tests DB, YouTube, Facebook and Instagram access |
@@ -66,8 +80,8 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 ```
 src/config.ts       env loading and per-integration requirements
 src/pipeline/       script, voice, visuals, captions, render, orchestration
-src/publish/        posting a finished video (YouTube now; Facebook and Instagram next)
-src/lib/            helpers (YouTube API, FFmpeg, storage, database, Graph API, .env writer)
+src/publish/        posting a finished video to YouTube, Facebook and Instagram
+src/lib/            helpers (YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
 scripts/            CLI entry points (make-video, setup and auth)
 test/               unit tests
 db/schema.sql       Postgres schema
