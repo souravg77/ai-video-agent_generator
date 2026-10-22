@@ -5,6 +5,13 @@ const optional = z.string().optional().transform((v) => (v ? v : undefined));
 
 const schema = z.object({
   ANTHROPIC_API_KEY: optional,
+  CLAUDE_MODEL: z.string().default("claude-opus-5-5"),
+
+  ELEVENLABS_API_KEY: optional,
+  ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
+  PEXELS_API_KEY: optional,
+  FFMPEG_PATH: z.string().default("ffmpeg"),
+  FFPROBE_PATH: z.string().default("ffprobe"),
   DATABASE_URL: optional,
 
   R2_ACCOUNT_ID: optional,
@@ -33,6 +40,8 @@ export const config: Config = schema.parse(process.env);
 // Groups of settings each phase needs; used by the setup check.
 export const requirements = {
   "Claude API": ["ANTHROPIC_API_KEY"],
+  "Voice (ElevenLabs)": ["ELEVENLABS_API_KEY"],
+  "Stock footage (Pexels)": ["PEXELS_API_KEY"],
   Database: ["DATABASE_URL"],
   "Storage (R2)": ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET", "R2_PUBLIC_BASE_URL"],
   YouTube: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"],
