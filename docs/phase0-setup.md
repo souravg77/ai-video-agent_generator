@@ -45,6 +45,12 @@ Start steps 2 and 3 first. Their reviews take days to weeks and run while the re
 1. https://console.anthropic.com → API keys → create key → `ANTHROPIC_API_KEY`.
 2. Set a monthly spend limit under Billing.
 
+## 7. Video pipeline keys (10 min)
+
+1. **ElevenLabs** (https://elevenlabs.io): Profile → API keys → `ELEVENLABS_API_KEY`. Optionally pick a voice and set `ELEVENLABS_VOICE_ID`.
+2. **Pexels** (https://www.pexels.com/api/): free key → `PEXELS_API_KEY`.
+3. Install **FFmpeg** (macOS `brew install ffmpeg`, Windows `winget install ffmpeg`, Ubuntu `sudo apt install ffmpeg`).
+
 ## Done when
 
 `npm run check` shows a ✓ on every line, and the YouTube audit form is submitted.
