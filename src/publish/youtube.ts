@@ -25,6 +25,7 @@ export async function postToYouTube(run: RenderedRun, opts: PostToYouTubeOptions
     privacy: opts.privacy,
     publishAt: opts.publishAt,
     containsSyntheticMedia: opts.containsSyntheticMedia,
+    long: run.format === "long",
   });
   if (opts.dryRun) return { metadata };
 
@@ -35,6 +36,7 @@ export async function postToYouTube(run: RenderedRun, opts: PostToYouTubeOptions
     let lastPct = -1;
     const upload = await uploadToYouTube(run.videoPath, metadata, {
       client: opts.client,
+      long: run.format === "long",
       onProgress: (f) => {
         const pct = Math.floor(f * 10) * 10;
         if (pct !== lastPct) log(`Uploading… ${(lastPct = pct)}%`);

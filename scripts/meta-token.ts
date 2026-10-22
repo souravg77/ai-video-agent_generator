@@ -1,12 +1,12 @@
 // Turns a short-lived user token (from Graph API Explorer) into a long-lived Page token,
-// finds the Instagram professional account linked to the Page, and saves both to .env.
-import { config } from "../src/config.js";
+// finds the Instagram professional account linked to the Page, and saves both to .env (or brands/<BRAND>.env).
+import { config, envFile } from "../src/config.js";
 import { writeEnv } from "../src/lib/env-file.js";
 import { graphGet } from "../src/lib/graph.js";
 
 const { META_APP_ID, META_APP_SECRET, META_SHORT_LIVED_USER_TOKEN } = config;
 if (!META_APP_ID || !META_APP_SECRET || !META_SHORT_LIVED_USER_TOKEN) {
-  console.error("Set META_APP_ID, META_APP_SECRET and META_SHORT_LIVED_USER_TOKEN in .env first.");
+  console.error(`Set META_APP_ID, META_APP_SECRET and META_SHORT_LIVED_USER_TOKEN in ${envFile} first.`);
   process.exit(1);
 }
 
@@ -43,5 +43,5 @@ writeEnv({
   ...(ig ? { META_IG_USER_ID: ig.id } : {}),
 });
 
-console.log(`Saved long-lived Page token for "${page.name}" (${page.id}).`);
+console.log(`Saved long-lived Page token for "${page.name}" (${page.id}) to ${envFile}.`);
 console.log(ig ? `Linked Instagram account: ${ig.id}` : "No Instagram professional account is linked to this Page yet.");

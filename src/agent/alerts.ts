@@ -1,9 +1,11 @@
-import { config } from "../config.js";
+import { BRAND, config } from "../config.js";
+
+const NAME = `Video agent${BRAND ? ` (${BRAND})` : ""}`;
 
 // Logs and, if ALERT_WEBHOOK_URL is set, posts to it. Slack reads `text`, Discord reads `content`.
 export async function alert(message: string): Promise<void> {
   console.error(`[alert] ${message}`);
-  await sendWebhook(`Video agent: ${message}`);
+  await sendWebhook(`${NAME}: ${message}`);
 }
 
 // Discord rejects messages over 2,000 characters.

@@ -1,8 +1,8 @@
 // One-time OAuth for the YouTube channel. Opens a consent URL, catches the redirect on localhost,
-// and saves the refresh token to .env as YOUTUBE_REFRESH_TOKEN.
+// and saves the refresh token to .env (or brands/<BRAND>.env) as YOUTUBE_REFRESH_TOKEN.
 import { createServer } from "node:http";
 import { google } from "googleapis";
-import { config } from "../src/config.js";
+import { config, envFile } from "../src/config.js";
 import { writeEnv } from "../src/lib/env-file.js";
 
 const PORT = 53682;
@@ -12,10 +12,12 @@ const SCOPES = [
   "https://www.googleapis.com/auth/youtube.readonly",
   // Watch time and average view duration for the weekly report
   "https://www.googleapis.com/auth/yt-analytics.readonly",
+  // Replying to comments (phase 6); YouTube has no narrower scope for this
+  "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
 if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET) {
-  console.error("Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first (OAuth client type: Desktop app).");
+  console.error(`Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in ${envFile} first (OAuth client type: Desktop app).`);
   process.exit(1);
 }
 
@@ -39,7 +41,7 @@ const server = createServer(async (req, res) => {
 
     writeEnv({ YOUTUBE_REFRESH_TOKEN: tokens.refresh_token });
     res.end(`Authorized for channel: ${channel}. You can close this tab.`);
-    console.log(`Saved YOUTUBE_REFRESH_TOKEN for channel "${channel}".`);
+    console.log(`Saved YOUTUBE_REFRESH_TOKEN for channel "${channel}" to ${envFile}.`);
     console.log("Note: while the OAuth consent screen is in Testing mode, this token expires after 7 days.");
   } catch (err) {
     res.writeHead(500).end(String(err));

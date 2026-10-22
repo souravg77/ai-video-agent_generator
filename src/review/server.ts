@@ -5,9 +5,11 @@ import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import * as store from "../agent/store.js";
 import { buildReport } from "../analytics/report.js";
+import { ignoreComment, pendingReplies, sendReply } from "../comments/index.js";
+import { realPlatforms, type CommentPlatforms } from "../comments/platforms.js";
 import { renderPage, renderReportPage } from "./page.js";
 
-export type ReviewServerOptions = { port: number; password?: string; host?: string };
+export type ReviewServerOptions = { port: number; password?: string; host?: string; commentPlatforms?: CommentPlatforms };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -83,19 +85,30 @@ async function handle(req: IncomingMessage, res: ServerResponse, opts: ReviewSer
 
   if (req.method === "GET" && url.pathname === "/") {
     const now = new Date();
-    const [review, upcoming, recent] = await Promise.all([
+    const [review, upcoming, recent, replies] = await Promise.all([
       store.listVideos(["rendered"]),
       store.listVideos(["idea", "rendering", "approved", "posting"]),
       store.listVideos(["posted", "failed", "rejected"], 20, "desc"),
+      pendingReplies(),
     ]);
     const posts = await store.allPosts([...upcoming, ...recent].map((v) => v.id));
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-    return void res.end(renderPage({ review, upcoming, recent, posts, now, flash: url.searchParams.get("flash") ?? undefined }));
+    return void res.end(renderPage({ review, upcoming, recent, posts, replies, now, flash: url.searchParams.get("flash") ?? undefined }));
   }
   if (req.method === "GET" && url.pathname === "/health") return void res.end("ok");
   if (req.method === "GET" && url.pathname === "/report") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     return void res.end(renderReportPage(await buildReport(new Date())));
+  }
+
+  const cm = /^\/comments\/([^/]+)\/(send|ignore)$/.exec(url.pathname);
+  if (cm && UUID.test(cm[1])) {
+    if (req.method !== "POST") return void res.writeHead(405).end();
+    if (!sameOrigin(req)) return void res.writeHead(403).end("Cross-site request blocked");
+    const form = await readForm(req);
+    if (cm[2] === "ignore") return redirect(res, (await ignoreComment(cm[1])) ? "Comment ignored." : "That comment was already handled.");
+    const r = await sendReply(cm[1], form.get("reply") ?? "", opts.commentPlatforms ?? realPlatforms);
+    return redirect(res, r.message);
   }
 
   const m = /^\/videos\/([^/]+)\/(file|approve|reject|retry)$/.exec(url.pathname);

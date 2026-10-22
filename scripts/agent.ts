@@ -30,7 +30,7 @@ async function runOnce() {
   if (r.planned || r.rendered.length || r.posted.length || r.failed.length || r.released) {
     deps.log(`planned ${r.planned}, made ${r.rendered.length}, posted ${r.posted.length}, failed ${r.failed.length}${r.released ? `, unstuck ${r.released}` : ""}`);
   }
-  const extra = [r.statsSaved != null && `saved ${r.statsSaved} stats snapshot(s)`, r.reportSent && "sent the weekly report"].filter(Boolean);
+  const extra = [r.statsSaved != null && `saved ${r.statsSaved} stats snapshot(s)`, r.reportSent && "sent the weekly report", r.replyDrafts && `drafted ${r.replyDrafts} comment repl(ies)`].filter(Boolean);
   if (extra.length) deps.log(extra.join(", "));
 }
 

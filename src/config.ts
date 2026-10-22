@@ -1,5 +1,17 @@
-import "dotenv/config";
+import { existsSync } from "node:fs";
+import dotenv from "dotenv";
 import { z } from "zod";
+
+// BRAND=cooking loads brands/cooking.env first, so its settings win over the shared .env.
+// Real environment variables win over both.
+export const BRAND = process.env.BRAND?.trim() || undefined;
+export const envFile = BRAND ? `brands/${BRAND}.env` : ".env";
+if (BRAND) {
+  if (!/^[a-z0-9][a-z0-9_-]*$/i.test(BRAND)) throw new Error(`BRAND "${BRAND}" may only use letters, digits, - and _.`);
+  if (!existsSync(envFile)) throw new Error(`BRAND=${BRAND} but ${envFile} doesn't exist. Copy brands/example.env to start one.`);
+  dotenv.config({ path: envFile });
+}
+dotenv.config();
 
 const optional = z.string().optional().transform((v) => (v ? v : undefined));
 
@@ -14,6 +26,20 @@ const schema = z.object({
   FFMPEG_PATH: z.string().default("ffmpeg"),
   FFPROBE_PATH: z.string().default("ffprobe"),
   DATABASE_URL: optional,
+  // Postgres schema for this brand's tables, so several brands can share one database. Defaults to the brand name.
+  DB_SCHEMA: z
+    .string()
+    .regex(/^[a-z_][a-z0-9_]*$/, "DB_SCHEMA may only use lowercase letters, digits and _")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  OUT_DIR: optional,
+
+  // Language the videos are written and spoken in, e.g. "Spanish". Stock footage searches stay in English.
+  VIDEO_LANGUAGE: z.string().default("English"),
+  // short = 9:16 Shorts/Reels; long = 16:9 YouTube videos of a few minutes (YouTube only)
+  VIDEO_FORMAT: z.enum(["short", "long"]).default("short"),
+  // Needs to cover your language's script, e.g. "Noto Sans CJK JP" for Japanese
+  CAPTION_FONT: z.string().default("DejaVu Sans"),
 
   R2_ACCOUNT_ID: optional,
   R2_ACCESS_KEY_ID: optional,
@@ -50,11 +76,21 @@ const schema = z.object({
   AGENT_STATS_HOURS: z.coerce.number().min(1).default(6),
   // 0 = Sunday … 6 = Saturday; the weekly report goes out on this day after 09:00 UTC
   AGENT_REPORT_WEEKDAY: z.coerce.number().int().min(0).max(6).default(1),
+  // Fetch new comments and have Claude draft replies for you to approve on the review page
+  AGENT_COMMENT_REPLIES: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
 });
 
-export type Config = z.infer<typeof schema>;
+export type Config = Omit<z.infer<typeof schema>, "OUT_DIR"> & { OUT_DIR: string };
 
-export const config: Config = schema.parse(process.env);
+const parsed = schema.parse(process.env);
+export const config: Config = {
+  ...parsed,
+  DB_SCHEMA: parsed.DB_SCHEMA ?? (BRAND ? BRAND.toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^(\d)/, "_$1") : undefined),
+  OUT_DIR: parsed.OUT_DIR ?? (BRAND ? `out/${BRAND}` : "out"),
+};
 
 // Groups of settings each phase needs; used by the setup check.
 export const requirements = {

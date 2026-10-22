@@ -1,4 +1,5 @@
 import { db, type Platform } from "../lib/db.js";
+import type { VideoFormat } from "../pipeline/captions.js";
 import type { VideoScript } from "../pipeline/script.js";
 
 export type VideoRow = {
@@ -12,6 +13,8 @@ export type VideoRow = {
   hashtags: string[];
   publish_at: Date | null;
   platforms: Platform[];
+  format: VideoFormat;
+  language: string | null;
   local_dir: string | null;
   public_url: string | null;
   error: string | null;
@@ -33,9 +36,23 @@ export async function takenSlots(from: Date): Promise<Date[]> {
   return rows.map((r) => r.publish_at);
 }
 
-export async function insertIdeas(ideas: { topic: string; angle: string; publishAt: Date; platforms: Platform[] }[]): Promise<void> {
+export type NewIdea = { topic: string; angle: string; publishAt: Date; platforms: Platform[]; format?: VideoFormat };
+
+// Long videos only go to YouTube, since Reels must be vertical.
+export const platformsFor = (format: VideoFormat | undefined, platforms: Platform[]): Platform[] =>
+  format === "long" ? platforms.filter((p) => p === "youtube") : platforms;
+
+export async function insertIdeas(ideas: NewIdea[]): Promise<void> {
   for (const i of ideas) {
-    await db().query("INSERT INTO videos (topic, angle, status, publish_at, platforms) VALUES ($1, $2, 'idea', $3, $4)", [i.topic, i.angle, i.publishAt, i.platforms]);
+    const platforms = platformsFor(i.format, i.platforms);
+    if (!platforms.length) throw new Error("Long videos can only be posted to YouTube; add youtube to the platforms.");
+    await db().query("INSERT INTO videos (topic, angle, status, publish_at, platforms, format) VALUES ($1, $2, 'idea', $3, $4, $5)", [
+      i.topic,
+      i.angle,
+      i.publishAt,
+      platforms,
+      i.format ?? "short",
+    ]);
   }
 }
 

@@ -2,7 +2,7 @@
 
 Generates short vertical videos (script → voice → render) and posts them to YouTube, Facebook Page Reels and Instagram Reels, with a human approval step.
 
-Status: **Phase 5**. The agent plans ideas, makes videos, waits for your approval on a review page, posts them on schedule to YouTube, Facebook and Instagram, tracks how each one does, and sends a weekly report. Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
+Status: **Phase 6**. The agent plans ideas, makes videos, waits for your approval on a review page, posts them on schedule to YouTube, Facebook and Instagram, tracks how each one does, and sends a weekly report. It can run several channels side by side, make long 16:9 YouTube videos, work in other languages and draft replies to comments for you to approve: see [docs/scaling.md](docs/scaling.md). Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
 
 ## Setup
 
@@ -42,6 +42,18 @@ npm run agent:add -- --topic "why cats purr" --at 2026-11-01T15:00:00Z   # add y
 The review page only listens on this computer unless `REVIEW_PASSWORD` is set; with a password it's open to your network (sign in with any username). Use a tunnel or a server with HTTPS before exposing it to the internet.
 
 The agent needs `DATABASE_URL`. A crash mid-render or mid-post is recovered automatically after an hour.
+
+## Scaling up
+
+| | How |
+| --- | --- |
+| Several channels | One file per brand in `brands/`, then `npm run agents` |
+| Long YouTube videos | `VIDEO_FORMAT=long` or `npm run make -- --topic … --long` |
+| Another language | `VIDEO_LANGUAGE=Spanish`, or `npm run make -- --translate out/<run> --language Spanish` |
+| Comment replies | `AGENT_COMMENT_REPLIES=true`: Claude drafts, you approve on the review page |
+| Quota and app reviews | YouTube verification and audit, Meta App Review |
+
+Details for each are in [docs/scaling.md](docs/scaling.md).
 
 ## Results and costs
 
@@ -115,6 +127,8 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | `npm run make -- --topic "…"` | Generates a video (see above) |
 | `npm run agent` | Runs the agent and the review page |
 | `npm run agent:add -- --topic "…" --at …` | Adds an idea to the calendar |
+| `npm run agents` | Runs one agent per brand in `brands/` |
+| `npm run comments` | Fetches new comments and drafts replies for the review page |
 | `npm run report` | Weekly report: views, best and weakest videos, spend (`--days`, `--send`) |
 | `npm run stats` | Saves a views/likes/watch-time snapshot for recent posts |
 | `npm run post` | Posts a finished video to YouTube, Facebook and Instagram |
@@ -133,6 +147,7 @@ src/pipeline/       script, voice, visuals, captions, render, orchestration
 src/publish/        posting a finished video to YouTube, Facebook and Instagram
 src/agent/          planner, posting slots, job queue in Postgres, worker loop, alerts
 src/analytics/      stats from each platform, weekly report
+src/comments/      fetching comments, Claude's reply drafts, sending approved replies
 src/review/         review page (watch, edit, approve, reject, retry) and report page
 src/lib/            helpers (YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
 scripts/            CLI entry points (make-video, setup and auth)

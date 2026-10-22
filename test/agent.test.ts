@@ -17,6 +17,7 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
   const { startReviewServer } = await import("../src/review/server.js");
   const { collectStats } = await import("../src/analytics/collect.js");
   const { buildReport, reportText } = await import("../src/analytics/report.js");
+  const comments = await import("../src/comments/index.js");
   type Deps = import("../src/agent/worker.js").AgentDeps;
   type Platform = import("../src/lib/db.js").Platform;
 
@@ -269,5 +270,102 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
     } finally {
       server.close();
     }
+  });
+
+  test("comments get drafted replies that only post when approved, once", async () => {
+    await postedVideo("octopus", new Date("2026-10-20T15:00:00Z"), ["youtube", "instagram"]);
+    const replies: [string, string, string][] = [];
+    let igDown = true;
+    const platforms = {
+      fetch: async (platform: Platform) =>
+        platform === "youtube"
+          ? [
+              { externalId: "yc1", author: "Ana", text: "Do they really have blue blood?" },
+              { externalId: "yc2", author: "bot", text: "WIN A FREE PHONE at scam.example" },
+            ]
+          : [{ externalId: "ic1", author: "sam", text: "wow" }],
+      reply: async (platform: Platform, id: string, text: string) => {
+        if (platform === "instagram" && igDown) throw new Error("token expired");
+        replies.push([platform, id, text]);
+        return `r-${id}`;
+      },
+    };
+    const seen: string[] = [];
+    const drafter = async ({ video, comments: cs }: { video: { title: string }; comments: { id: string; text: string }[] }) => {
+      seen.push(video.title);
+      return new Map(cs.map((c) => [c.id, c.text.includes("scam") ? "" : `Thanks! (${c.text.length})`]));
+    };
+
+    const r = await comments.checkComments(now, platforms, drafter);
+    assert.deepEqual([r.found, r.drafted, r.skipped], [3, 2, 1]);
+    assert.deepEqual(seen, ["octopus"]); // one Claude call per video
+    assert.equal((await comments.checkComments(now, platforms, drafter)).found, 0); // no duplicates
+
+    const pending = await comments.pendingReplies();
+    assert.equal(pending.length, 2);
+    assert.equal(replies.length, 0); // nothing posted without approval
+
+    const yt = pending.find((c) => c.platform === "youtube")!;
+    assert.deepEqual(await comments.sendReply(yt.id, "  Yes, copper makes it blue!  ", platforms), { ok: true, message: "Reply posted on youtube." });
+    assert.deepEqual(replies, [["youtube", "yc1", "Yes, copper makes it blue!"]]);
+    assert.equal((await comments.sendReply(yt.id, "again", platforms)).ok, false); // a second click doesn't post twice
+
+    const ig = pending.find((c) => c.platform === "instagram")!;
+    const failed = await comments.sendReply(ig.id, "Thanks!", platforms);
+    assert.match(failed.message, /token expired/);
+    assert.equal((await comments.pendingReplies())[0].status, "failed");
+    igDown = false;
+    assert.ok((await comments.sendReply(ig.id, "Thanks!", platforms)).ok);
+    assert.equal((await comments.pendingReplies()).length, 0);
+  });
+
+  test("review page sends and ignores comment replies", async () => {
+    await postedVideo("cats", new Date("2026-10-20T15:00:00Z"), ["youtube"]);
+    const sent: string[] = [];
+    const platforms = {
+      fetch: async () => [
+        { externalId: "a", author: "<b>x</b>", text: "Love it <script>" },
+        { externalId: "b", author: "y", text: "first" },
+      ],
+      reply: async (_p: Platform, id: string, text: string) => (sent.push(`${id}:${text}`), "r1"),
+    };
+    await comments.checkComments(now, platforms, async ({ comments: cs }) => new Map(cs.map((c) => [c.id, "Thank you!"])));
+    const [a, b] = (await comments.pendingReplies()).sort((x, y) => x.external_id.localeCompare(y.external_id));
+
+    const server = await startReviewServer({ port: 0, host: "127.0.0.1", commentPlatforms: platforms });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      const page = await (await fetch(base)).text();
+      assert.match(page, /Comment replies/);
+      assert.match(page, /Love it &lt;script&gt;/);
+      assert.match(page, /2 comment replies to approve/);
+
+      const send = await fetch(`${base}/comments/${a.id}/send`, { method: "POST", body: new URLSearchParams({ reply: "Edited thanks" }), redirect: "manual" });
+      assert.equal(send.status, 303);
+      assert.deepEqual(sent, ["a:Edited thanks"]);
+      const ignore = await fetch(`${base}/comments/${b.id}/ignore`, { method: "POST", body: new URLSearchParams(), redirect: "manual" });
+      assert.equal(ignore.status, 303);
+      assert.equal(sent.length, 1);
+      assert.equal((await comments.pendingReplies()).length, 0);
+    } finally {
+      server.close();
+    }
+  });
+
+  test("long ideas are planned for YouTube only", async () => {
+    const d = deps({ settings: { ...settings, format: "long", platforms: ["youtube", "instagram"] } });
+    await planAhead(d, now);
+    const ideas = await store.listVideos(["idea"]);
+    assert.ok(ideas.length > 0);
+    assert.ok(ideas.every((v) => v.format === "long" && v.platforms.join() === "youtube"));
+  });
+
+  test("db:migrate with DB_SCHEMA keeps a brand's tables in their own schema", async () => {
+    const { execFileSync } = await import("node:child_process");
+    await db().query("DROP SCHEMA IF EXISTS brand_test CASCADE");
+    execFileSync("npx", ["tsx", "scripts/migrate.ts"], { env: { ...process.env, DATABASE_URL: url, DB_SCHEMA: "brand_test", BRAND: "" }, stdio: "pipe" });
+    const { rows } = await db().query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'brand_test' ORDER BY table_name");
+    assert.deepEqual(rows.map((r) => r.table_name), ["agent_state", "comments", "post_stats", "posts", "videos"]);
+    await db().query("DROP SCHEMA brand_test CASCADE");
   });
 });
