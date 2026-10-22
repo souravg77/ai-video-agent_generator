@@ -15,6 +15,8 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
   const { tick, planAhead } = await import("../src/agent/worker.js");
   const { recordPost } = await import("../src/publish/record.js");
   const { startReviewServer } = await import("../src/review/server.js");
+  const { collectStats } = await import("../src/analytics/collect.js");
+  const { buildReport, reportText } = await import("../src/analytics/report.js");
   type Deps = import("../src/agent/worker.js").AgentDeps;
   type Platform = import("../src/lib/db.js").Platform;
 
@@ -62,7 +64,7 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
     await db().query(schema); // migrations must be safe to rerun
   });
   beforeEach(async () => {
-    await db().query("TRUNCATE videos CASCADE");
+    await db().query("TRUNCATE videos, agent_state CASCADE");
     failing = new Set();
     publishCalls = [];
     alerts = [];
@@ -175,6 +177,95 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
       const after = await (await fetch(base, { headers: auth })).text();
       assert.match(after, /Cats &lt;3/);
       assert.doesNotMatch(after, /Cats <3/);
+    } finally {
+      server.close();
+    }
+  });
+
+  // Posts one video to the given platforms as if it went out at `at`, with a render cost.
+  async function postedVideo(title: string, at: Date, platforms: Platform[], costUsd = 0.05): Promise<string> {
+    const { rows } = await db().query<{ id: string }>(
+      "INSERT INTO videos (topic, title, status, publish_at, platforms, cost_usd) VALUES ($1, $1, 'posted', $2, $3, $4) RETURNING id",
+      [title, at, platforms, costUsd],
+    );
+    for (const p of platforms) {
+      await db().query("INSERT INTO posts (video_id, platform, status, external_id, url, published_at) VALUES ($1, $2, 'published', $3, $4, $5)", [
+        rows[0].id, p, `${p}-${title}`, `https://example.com/${p}/${title}`, at,
+      ]);
+    }
+    return rows[0].id;
+  }
+
+  const fakeFetchers = (views: Record<string, number>) => ({
+    youtube: async (ids: string[]) => new Map(ids.map((id) => [id, { views: views[id] ?? 0, likes: 1 }])),
+    facebook: async (id: string) => ({ views: views[id] ?? 0 }),
+    instagram: async (id: string) => {
+      if (!(id in views)) throw new Error("token expired");
+      return { views: views[id], watchTimeSec: 30 };
+    },
+  });
+
+  test("collects a snapshot per live post, survives one platform failing, and skips old posts", async () => {
+    await postedVideo("fresh", new Date("2026-10-20T15:00:00Z"), ["youtube", "facebook", "instagram"]);
+    await postedVideo("old", new Date("2026-08-01T15:00:00Z"), ["youtube"]);
+    const r = await collectStats(now, fakeFetchers({ "youtube-fresh": 100, "facebook-fresh": 20 }));
+    assert.equal(r.saved, 2);
+    assert.equal(r.errors.length, 1);
+    assert.match(r.errors[0], /instagram.*token expired/);
+
+    // A second snapshot later; pastVideos and the report use the latest one per post, summed across platforms.
+    await collectStats(new Date("2026-10-22T18:00:00Z"), fakeFetchers({ "youtube-fresh": 250, "facebook-fresh": 30, "instagram-fresh": 70 }));
+    const past = await store.pastVideos();
+    assert.equal(past.find((p) => p.title === "fresh")?.views, 350);
+    assert.equal(past.find((p) => p.title === "old")?.views, null);
+  });
+
+  test("weekly report ranks videos and works out cost per 1,000 views", async () => {
+    const at = new Date("2026-10-20T15:00:00Z");
+    await postedVideo("big", at, ["youtube", "instagram"], 0.1);
+    await postedVideo("small", at, ["youtube"], 0.1);
+    await postedVideo("last month", new Date("2026-09-01T15:00:00Z"), ["youtube"], 5);
+    await collectStats(now, fakeFetchers({ "youtube-big": 1500, "instagram-big": 500, "youtube-small": 0, "youtube-last month": 9 }));
+    await store.insertIdeas([{ topic: "next idea", angle: "", publishAt: new Date("2026-10-23T15:00:00Z"), platforms: ["youtube"] }]);
+
+    const r = await buildReport(now);
+    assert.deepEqual(r.videos.map((v) => [v.title, v.views]), [["big", 2000], ["small", 0]]);
+    assert.equal(r.totals.views, 2000);
+    assert.equal(r.byPlatform.instagram?.watchTimeSec, 30);
+    assert.ok(Math.abs(r.totals.costUsd - 0.2) < 1e-9);
+    assert.ok(Math.abs((r.totals.costPer1kViews ?? 0) - 0.1) < 1e-9);
+    assert.equal(r.upcoming[0].title, "next idea");
+    const text = reportText(r);
+    assert.match(text, /2 video\(s\) posted · 2,000 views/);
+    assert.match(text, /Next up: next idea/);
+  });
+
+  test("the agent collects stats every few hours and sends the report once on Mondays", async () => {
+    let collected = 0;
+    let reports = 0;
+    const d = deps({
+      planner: undefined,
+      analytics: {
+        collect: async () => (collected++, { saved: 0, errors: [] }),
+        report: async () => void reports++,
+      },
+    });
+    const monday = new Date("2026-10-26T08:00:00Z");
+    await tick(d, monday);
+    await tick(d, new Date("2026-10-26T09:30:00Z")); // < 6 hours later: no new stats, but report time
+    await tick(d, new Date("2026-10-26T14:30:00Z")); // 6.5 hours after the first: stats again; report already sent
+    await tick(d, new Date("2026-10-27T10:00:00Z")); // Tuesday
+    assert.equal(collected, 3);
+    assert.equal(reports, 1);
+  });
+
+  test("review page shows the weekly report", async () => {
+    await postedVideo("Report <video>", new Date("2026-10-20T15:00:00Z"), ["youtube"]);
+    const server = await startReviewServer({ port: 0, host: "127.0.0.1" });
+    try {
+      const html = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}/report`)).text();
+      assert.match(html, /Report &lt;video&gt;/);
+      assert.match(html, /videos posted/);
     } finally {
       server.close();
     }

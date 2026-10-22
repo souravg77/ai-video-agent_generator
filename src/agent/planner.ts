@@ -18,14 +18,19 @@ export function planningPrompt(niche: string, count: number, past: PastVideo[]):
   const history = past.length
     ? past.map((p) => `- ${p.title}${p.views != null ? ` (${p.views} views)` : ""}`).join("\n")
     : "(none yet)";
+  const best = past
+    .filter((p) => p.views)
+    .sort((a, b) => b.views! - a.views!)
+    .slice(0, 5);
+  const winners = best.length >= 2 ? `\n\nBest performers so far (views across all platforms):\n${best.map((p) => `- ${p.title} (${p.views} views)`).join("\n")}` : "";
   return `Channel niche: ${niche}
 
 Propose exactly ${count} new short-video ideas (30-60 second faceless vertical videos with stock footage and voice-over).
 Each must be specific, factual, and easy to illustrate with stock footage. Do not repeat or closely paraphrase earlier videos.
-Lean toward the kinds of topics that got more views, if view counts are shown.
+Lean toward the kinds of topics and hooks that got more views, if view counts are shown. Newest videos have had the least time to gather views.
 
-Earlier videos:
-${history}`;
+Earlier videos, newest first:
+${history}${winners}`;
 }
 
 export function claudePlanner(niche: string, client = new Anthropic()): Planner {

@@ -29,7 +29,7 @@ try {
     upload: !values["no-upload"],
     log: (m) => console.log(m),
   });
-  console.log(`\nDone: ${result.videoPath} (${result.durationSec.toFixed(1)} s)`);
+  console.log(`\nDone: ${result.videoPath} (${result.durationSec.toFixed(1)} s, about $${result.costUsd.toFixed(3)})`);
   console.log(`Title: ${result.script.title}`);
   if (result.url) console.log(`Uploaded: ${result.url}`);
   if (result.videoId) console.log(`Database id: ${result.videoId}`);

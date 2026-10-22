@@ -10,6 +10,8 @@ const REDIRECT = `http://localhost:${PORT}/oauth2callback`;
 const SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube.readonly",
+  // Watch time and average view duration for the weekly report
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
 ];
 
 if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET) {

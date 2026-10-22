@@ -19,7 +19,9 @@
     "post:youtube": "tsx scripts/post-youtube.ts",
     "post": "tsx scripts/post.ts",
     "agent": "tsx scripts/agent.ts",
-    "agent:add": "tsx scripts/agent-add.ts"
+    "agent:add": "tsx scripts/agent-add.ts",
+    "stats": "tsx scripts/stats.ts",
+    "report": "tsx scripts/report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

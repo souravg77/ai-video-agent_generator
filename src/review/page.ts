@@ -1,4 +1,5 @@
 import type { PostRow, VideoRow } from "../agent/store.js";
+import { hours, type Report } from "../analytics/report.js";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -6,6 +7,48 @@ export const esc = (s: unknown) =>
 // <input type="datetime-local"> value, in UTC.
 export const toInputUtc = (d: Date | null) => (d ? d.toISOString().slice(0, 16) : "");
 const fmt = (d: Date | null) => (d ? `${d.toISOString().slice(0, 16).replace("T", " ")} UTC` : "unscheduled");
+
+const STYLES = `
+:root { --bg:#f5f6f8; --card:#fff; --fg:#17202a; --muted:#5d6b7a; --line:#dde2e8; --accent:#1f6feb; --ok:#1a7f37; --bad:#c62828; --warn:#9a5b00; color-scheme: light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0f141a; --card:#161d25; --fg:#e5eaf0; --muted:#98a5b3; --line:#29333e; --accent:#6ea8ff; --ok:#56d364; --bad:#ff7b72; --warn:#f0b45a; color-scheme: dark; } }
+* { box-sizing: border-box; }
+body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 32px 0 12px; }
+.lede { color: var(--muted); margin: 0; }
+.flash { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
+.card video { width: 100%; aspect-ratio: 9/16; background: #000; border-radius: 8px; grid-row: span 2; }
+.fields { display: grid; gap: 6px; min-width: 0; }
+label { font-size: 13px; font-weight: 600; margin-top: 6px; } .hint { font-weight: 400; color: var(--muted); }
+input, textarea { width: 100%; min-width: 0; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 16px; cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.actions { margin-top: 8px; } .reject { display: flex; gap: 8px; align-self: end; min-width: 0; } .reject input { flex: 1; }
+.meta { margin: 0; color: var(--muted); font-size: 13px; }
+.status { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.status.needs, .s-rendered { color: var(--accent); border-color: var(--accent); } .status.bad, .s-failed { color: var(--bad); border-color: var(--bad); }
+.s-posted, .s-approved { color: var(--ok); border-color: var(--ok); }
+ul { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.row { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; } .row:last-child { border-bottom: 0; }
+.row-main { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; } .row-main strong { min-width: 0; overflow-wrap: anywhere; }
+.when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; margin-left: auto; }
+.sub { margin: 0; color: var(--muted); font-size: 13px; } .err { color: var(--bad); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; } .chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; }
+.chip.ok { color: var(--ok); border-color: var(--ok); } .chip.bad { color: var(--bad); border-color: var(--bad); }
+.row form button { padding: 4px 12px; font-size: 13px; justify-self: start; }
+.empty { color: var(--muted); padding: 16px; margin: 0; }
+@media (max-width: 640px) { .card { grid-template-columns: minmax(0, 1fr); } .card video { max-width: 280px; justify-self: center; grid-row: auto; } .when { margin-left: 0; } }
+nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; } nav a { color: var(--accent); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; }
+.stat b { display: block; font-size: 22px; font-variant-numeric: tabular-nums; } .stat span { color: var(--muted); font-size: 13px; }
+.table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 180px; } tr:last-child td { border-bottom: 0; } th { color: var(--muted); font-weight: 600; font-size: 13px; }
+td a { color: var(--accent); }
+`;
 
 const STATUS_LABEL: Record<string, string> = {
   idea: "Planned",
@@ -89,40 +132,9 @@ export function renderPage(data: {
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Video Review Queue</title>
-<style>
-:root { --bg:#f5f6f8; --card:#fff; --fg:#17202a; --muted:#5d6b7a; --line:#dde2e8; --accent:#1f6feb; --ok:#1a7f37; --bad:#c62828; --warn:#9a5b00; color-scheme: light; }
-@media (prefers-color-scheme: dark) { :root { --bg:#0f141a; --card:#161d25; --fg:#e5eaf0; --muted:#98a5b3; --line:#29333e; --accent:#6ea8ff; --ok:#56d364; --bad:#ff7b72; --warn:#f0b45a; color-scheme: dark; } }
-* { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
-h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 18px; margin: 32px 0 12px; }
-.lede { color: var(--muted); margin: 0; }
-.flash { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin-top: 16px; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; margin-bottom: 16px; }
-.card video { width: 100%; aspect-ratio: 9/16; background: #000; border-radius: 8px; grid-row: span 2; }
-.fields { display: grid; gap: 6px; min-width: 0; }
-label { font-size: 13px; font-weight: 600; margin-top: 6px; } .hint { font-weight: 400; color: var(--muted); }
-input, textarea { width: 100%; min-width: 0; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
-button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 6px; padding: 8px 16px; cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.actions { margin-top: 8px; } .reject { display: flex; gap: 8px; align-self: end; min-width: 0; } .reject input { flex: 1; }
-.meta { margin: 0; color: var(--muted); font-size: 13px; }
-.status { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
-.status.needs, .s-rendered { color: var(--accent); border-color: var(--accent); } .status.bad, .s-failed { color: var(--bad); border-color: var(--bad); }
-.s-posted, .s-approved { color: var(--ok); border-color: var(--ok); }
-ul { list-style: none; padding: 0; margin: 0; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
-.row { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 4px; } .row:last-child { border-bottom: 0; }
-.row-main { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; } .row-main strong { min-width: 0; overflow-wrap: anywhere; }
-.when { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; margin-left: auto; }
-.sub { margin: 0; color: var(--muted); font-size: 13px; } .err { color: var(--bad); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; } .chip { font-size: 12px; padding: 2px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; }
-.chip.ok { color: var(--ok); border-color: var(--ok); } .chip.bad { color: var(--bad); border-color: var(--bad); }
-.row form button { padding: 4px 12px; font-size: 13px; justify-self: start; }
-.empty { color: var(--muted); padding: 16px; margin: 0; }
-@media (max-width: 640px) { .card { grid-template-columns: minmax(0, 1fr); } .card video { max-width: 280px; justify-self: center; grid-row: auto; } .when { margin-left: 0; } }
-</style></head>
+<style>${STYLES}</style></head>
 <body><main>
+<nav><a href="/">Review queue</a><a href="/report">Weekly report</a></nav>
 <h1>Video review queue</h1>
 <p class="lede">${review.length} waiting for review · ${upcoming.length} coming up · times in UTC</p>
 ${data.flash ? `<p class="flash" role="status">${esc(data.flash)}</p>` : ""}
@@ -132,5 +144,50 @@ ${review.length ? review.map((v) => reviewCard(v, now)).join("\n") : `<ul><li><p
 <ul>${upcoming.length ? upcoming.map((v) => row(v, posts.get(v.id))).join("") : `<li><p class="empty">No planned videos. Set AGENT_NICHE so the agent plans ideas, or add one with npm run agent:add.</p></li>`}</ul>
 <h2>Recent</h2>
 <ul>${recent.length ? recent.map((v) => row(v, posts.get(v.id))).join("") : `<li><p class="empty">Nothing posted yet.</p></li>`}</ul>
+</main></body></html>`;
+}
+
+export function renderReportPage(r: Report): string {
+  const t = r.totals;
+  const usd = (x: number) => `$${x.toFixed(x < 1 ? 3 : 2)}`;
+  const int = (x: number) => Math.round(x).toLocaleString("en-US");
+  const platforms = ["youtube", "facebook", "instagram"] as const;
+  const shown = platforms.filter((p) => r.byPlatform[p]);
+  const stat = (value: string, label: string) => `<div class="stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
+  const cell = (v: Report["videos"][number], p: (typeof platforms)[number]) => {
+    const x = v.platforms[p];
+    if (!x) return "<td>–</td>";
+    return `<td>${x.url ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${int(x.views)}</a>` : int(x.views)}</td>`;
+  };
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Weekly Video Report</title>
+<style>${STYLES}</style></head>
+<body><main>
+<nav><a href="/">Review queue</a><a href="/report">Weekly report</a></nav>
+<h1>Last 7 days</h1>
+<p class="lede">${esc(r.from.toISOString().slice(0, 10))} to ${esc(r.to.toISOString().slice(0, 10))} · latest numbers from each platform</p>
+<h2>Totals</h2>
+<div class="stats">
+${stat(int(t.videos), "videos posted")}
+${stat(int(t.views), "views")}
+${stat(int(t.likes), "likes")}
+${stat(int(t.comments), "comments")}
+${stat(t.watchTimeSec ? hours(t.watchTimeSec) : "–", "watch time")}
+${stat(usd(t.costUsd), "spent making them")}
+${stat(t.costPer1kViews == null ? "–" : usd(t.costPer1kViews), "per 1,000 views")}
+${r.rejected.count ? stat(`${r.rejected.count} (${usd(r.rejected.costUsd)})`, "rejected") : ""}
+</div>
+<h2>Videos</h2>
+${
+  r.videos.length
+    ? `<div class="table-wrap"><table>
+<thead><tr><th scope="col">Video</th>${shown.map((p) => `<th scope="col">${esc(p)}</th>`).join("")}<th scope="col">Total views</th><th scope="col">Cost</th></tr></thead>
+<tbody>${r.videos.map((v) => `<tr><td>${esc(v.title)}</td>${shown.map((p) => cell(v, p)).join("")}<td>${int(v.views)}</td><td>${usd(v.costUsd)}</td></tr>`).join("")}</tbody>
+</table></div>`
+    : `<ul><li><p class="empty">Nothing posted in the last 7 days.</p></li></ul>`
+}
+<h2>Coming up</h2>
+<ul>${r.upcoming.length ? r.upcoming.map((u) => `<li class="row"><div class="row-main"><span class="status s-${esc(u.status)}">${esc(STATUS_LABEL[u.status] ?? u.status)}</span><strong>${esc(u.title)}</strong><span class="when">${esc(fmt(u.publishAt))}</span></div></li>`).join("") : `<li><p class="empty">Nothing planned.</p></li>`}</ul>
 </main></body></html>`;
 }
