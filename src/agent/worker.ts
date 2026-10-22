@@ -8,14 +8,15 @@ import { makeVideo } from "../pipeline/index.js";
 import { normalizeScript } from "../pipeline/script.js";
 import { parsePlatforms, publish, type PlatformResult } from "../publish/index.js";
 import type { RenderedRun } from "../publish/run-dir.js";
+import { exportForUpload } from "../publish/manual.js";
 import { collectStats, defaultFetchers, type CollectResult } from "../analytics/collect.js";
 import { buildReport, reportText } from "../analytics/report.js";
 import { checkComments, type CheckResult } from "../comments/index.js";
-import { claudeDrafter } from "../comments/drafts.js";
+import { aiDrafter } from "../comments/drafts.js";
 import { realPlatforms } from "../comments/platforms.js";
 import { alert, sendWebhook } from "./alerts.js";
 import { pollReviews, sendForReview, sendText, telegramConfigured } from "./telegram.js";
-import { claudePlanner, type Planner } from "./planner.js";
+import { aiPlanner, type Planner } from "./planner.js";
 import { freeSlots, upcomingSlots } from "./slots.js";
 import * as store from "./store.js";
 
@@ -90,12 +91,19 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
     Array.from({ length: count }, (_, i) => ({ topic: `sample idea ${Date.now().toString(36)}-${i + 1}`, angle: "Offline placeholder idea" }));
   return {
     settings: settingsFromEnv(),
-    planner: opts.offline ? offlinePlanner : config.AGENT_NICHE ? claudePlanner(config.AGENT_NICHE, { format: config.VIDEO_FORMAT, language: config.VIDEO_LANGUAGE }) : undefined,
+    planner: opts.offline ? offlinePlanner : config.AGENT_NICHE ? aiPlanner(config.AGENT_NICHE, { format: config.VIDEO_FORMAT, language: config.VIDEO_LANGUAGE }) : undefined,
     render: async (v) => {
       const hookStyle = config.AGENT_HOOK_TESTS ? chooseHookStyle(await store.hookStyleStats()) : undefined;
       await makeVideo({ topic: v.topic, angle: v.angle ?? undefined, videoId: v.id, format: v.format, hookStyle, offline: opts.offline, log: () => {} });
     },
-    publish: (run, platforms) => publish(run, platforms, { privacy: "public" }),
+    publish:
+      config.PUBLISH_MODE === "manual"
+        ? async (run, platforms) => {
+            const { dir, results } = await exportForUpload(run, platforms, config.OUT_DIR);
+            if (results.some((r) => r.ok)) await alert(`"${run.script.title}" is ready to upload by hand: ${dir} (video.mp4 plus the text for each platform).`);
+            return results;
+          }
+        : (run, platforms) => publish(run, platforms, { privacy: "public" }),
     alert,
     log,
     analytics: opts.offline
@@ -111,7 +119,7 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
         },
     review: telegramConfigured() ? { send: sendForReview, poll: pollReviews } : undefined,
     comments:
-      config.AGENT_COMMENT_REPLIES && !opts.offline ? { check: (now) => checkComments(now, realPlatforms, claudeDrafter()) } : undefined,
+      config.AGENT_COMMENT_REPLIES && !opts.offline ? { check: (now) => checkComments(now, realPlatforms, aiDrafter()) } : undefined,
   };
 }
 
@@ -182,7 +190,7 @@ async function renderNext(deps: AgentDeps, now: Date): Promise<string | undefine
 }
 
 async function postOne(deps: AgentDeps, video: store.VideoRow, now: Date): Promise<"posted" | "failed" | "retry"> {
-  const done = (p?: store.PostRow) => p && (p.status === "published" || p.status === "scheduled");
+  const done = (p?: store.PostRow) => p && (p.status === "published" || p.status === "scheduled" || p.status === "exported");
   const due = (pl: Platform) => !video.publish_at || video.publish_at.getTime() + (deps.settings.platformDelays?.[pl] ?? 0) * 60_000 <= now.getTime();
   const before = await store.postsFor(video.id);
   const pending = video.platforms.filter((pl) => {

@@ -24,7 +24,8 @@
     "stats": "tsx scripts/stats.ts",
     "report": "tsx scripts/report.ts",
     "comments": "tsx scripts/comments.ts",
-    "telegram:setup": "tsx scripts/telegram-setup.ts"
+    "telegram:setup": "tsx scripts/telegram-setup.ts",
+    "local:setup": "tsx scripts/local-setup.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

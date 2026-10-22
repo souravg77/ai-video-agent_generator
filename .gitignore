@@ -5,3 +5,5 @@ dist/
 out/
 brands/*.env
 !brands/example.env
+models/
+footage/

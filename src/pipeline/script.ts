@@ -1,8 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod/v4"; // the SDK's zodOutputFormat helper needs zod v4 schemas
-import { config } from "../config.js";
-import { claudeCostUsd } from "../lib/costs.js";
+import { z } from "zod/v4"; // structured output helpers need zod v4 schemas
+import { askJson } from "../lib/llm.js";
 import type { VideoFormat } from "./captions.js";
 import { HOOK_STYLES, type HookStyle } from "./hooks.js";
 
@@ -47,43 +44,33 @@ Every visual_query must describe footage that plausibly exists on a stock site.
 Stay factual; do not invent statistics.${lang}`;
 }
 
-export async function generateScript(
-  topic: string,
-  angle?: string,
-  opts: ScriptOptions = {},
-  client = new Anthropic(),
-): Promise<{ script: VideoScript; costUsd: number }> {
+export async function generateScript(topic: string, angle?: string, opts: ScriptOptions = {}): Promise<{ script: VideoScript; costUsd: number }> {
   const kind = opts.format === "long" ? "YouTube video" : "short video";
   const ask = angle ? `Write a ${kind} script about: ${topic}\nAngle: ${angle}` : `Write a ${kind} script about: ${topic}`;
-  const response = await client.messages.parse({
-    model: config.CLAUDE_MODEL,
-    max_tokens: opts.format === "long" ? 32000 : 16000,
-    output_config: { effort: "medium", format: zodOutputFormat(VideoScriptSchema) },
+  const { data, costUsd } = await askJson({
+    schema: VideoScriptSchema,
     system: scriptSystemPrompt(opts),
-    messages: [{ role: "user", content: ask }],
+    user: ask,
+    maxTokens: opts.format === "long" ? 32000 : 16000,
+    what: `write a script for "${topic}"`,
   });
-  if (response.stop_reason === "refusal") throw new Error(`Claude declined to write a script for "${topic}".`);
-  if (response.stop_reason === "max_tokens") throw new Error("Script generation hit max_tokens before finishing.");
-  if (!response.parsed_output) throw new Error("Claude's script did not match the expected format.");
-  return { script: normalizeScript(response.parsed_output), costUsd: claudeCostUsd(config.CLAUDE_MODEL, response.usage) };
+  return { script: normalizeScript(data), costUsd };
 }
 
 // Rewrites a finished script in another language, keeping the same scenes so the same footage fits.
-export async function translateScript(script: VideoScript, language: string, client = new Anthropic()): Promise<{ script: VideoScript; costUsd: number }> {
-  const response = await client.messages.parse({
-    model: config.CLAUDE_MODEL,
-    max_tokens: 32000,
-    output_config: { effort: "medium", format: zodOutputFormat(VideoScriptSchema) },
+export async function translateScript(script: VideoScript, language: string): Promise<{ script: VideoScript; costUsd: number }> {
+  const { data, costUsd } = await askJson({
+    schema: VideoScriptSchema,
     system: `You adapt video scripts into ${language} for native speakers. Keep exactly the same number and order of scenes and the same meaning.
 Translate hook, narration, on_screen_text, title, description and hashtags naturally rather than word for word; use hashtags people search for in ${language}.
 Keep each visual_query exactly as given, in English.`,
-    messages: [{ role: "user", content: JSON.stringify(script) }],
+    user: JSON.stringify(script),
+    maxTokens: 32000,
+    what: `translate "${script.title}"`,
   });
-  if (response.stop_reason === "refusal") throw new Error(`Claude declined to translate "${script.title}".`);
-  if (!response.parsed_output) throw new Error("Claude's translation did not match the expected format.");
-  const out = normalizeScript(response.parsed_output);
+  const out = normalizeScript(data);
   if (out.scenes.length !== script.scenes.length) throw new Error(`The translation has ${out.scenes.length} scenes instead of ${script.scenes.length}.`);
-  return { script: out, costUsd: claudeCostUsd(config.CLAUDE_MODEL, response.usage) };
+  return { script: out, costUsd };
 }
 
 // Cleans model output so later steps can rely on it.

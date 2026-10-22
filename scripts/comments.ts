@@ -3,7 +3,7 @@
 //   npm run comments
 // The agent does this on its own every AGENT_STATS_HOURS when AGENT_COMMENT_REPLIES=true.
 import { checkComments } from "../src/comments/index.js";
-import { claudeDrafter } from "../src/comments/drafts.js";
+import { aiDrafter } from "../src/comments/drafts.js";
 import { realPlatforms } from "../src/comments/platforms.js";
 import { closeDb, dbConfigured } from "../src/lib/db.js";
 
@@ -12,7 +12,7 @@ if (!dbConfigured()) {
   process.exit(1);
 }
 try {
-  const r = await checkComments(new Date(), realPlatforms, claudeDrafter());
+  const r = await checkComments(new Date(), realPlatforms, aiDrafter());
   console.log(`${r.found} new comment(s), ${r.drafted} reply draft(s), ${r.skipped} not worth a reply.`);
   for (const e of r.errors) console.error(`  ${e}`);
   if (r.drafted) console.log("Review the drafts on the review page (npm run agent).");

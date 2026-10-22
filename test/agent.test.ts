@@ -403,6 +403,46 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
     assert.equal(r.posted.length, 1);
   });
 
+  test("manual publish mode exports instead of posting, and the review page offers the upload text", async () => {
+    const { mkdtemp, mkdir, writeFile, readdir } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const { exportForUpload } = await import("../src/publish/manual.js");
+    const root = await mkdtemp(join(tmpdir(), "manual-"));
+    const d = deps({
+      planner: undefined,
+      settings: { ...settings, autoApprove: true },
+      render: async (v) => {
+        const dir = join(root, v.id);
+        await mkdir(dir);
+        await writeFile(join(dir, "video.mp4"), "x");
+        const script = { hook: "h", title: "Squid ink", description: "Why squid squirt ink.", hashtags: ["squid"], scenes: [{ narration: "n", on_screen_text: "", visual_query: "q" }] };
+        await updateVideo(v.id, { script, title: script.title, description: script.description, hashtags: script.hashtags, local_dir: dir });
+      },
+      publish: async (run, platforms) => (await exportForUpload(run, platforms, root, now)).results,
+    });
+    await store.insertIdeas([{ topic: "squid", angle: "", publishAt: now, platforms: ["youtube", "instagram"] }]);
+    const r = await tick(d, now);
+    assert.equal(r.posted.length, 1);
+    assert.deepEqual(await readdir(join(root, "ready")), ["2026-10-22-squid-ink"]);
+    const posts = await store.postsFor(r.posted[0]);
+    assert.deepEqual(posts.map((p) => p.status), ["exported", "exported"]);
+    // Nothing to fetch stats or comments for.
+    const stats = await collectStats(now, { youtube: async () => assert.fail("no API calls"), facebook: async () => assert.fail(), instagram: async () => assert.fail() });
+    assert.equal(stats.saved, 0);
+
+    const server = await startReviewServer({ port: 0, host: "127.0.0.1" });
+    try {
+      const page = await (await fetch(`http://127.0.0.1:${(server.address() as AddressInfo).port}`)).text();
+      assert.match(page, /instagram: upload by hand/);
+      assert.match(page, /Download video.mp4/);
+      assert.match(page, /Why squid squirt ink.\n\n#squid<\/textarea>/);
+      assert.match(page, /value="Squid ink"/);
+    } finally {
+      server.close();
+    }
+  });
+
   test("old renders inside the output folder are deleted once a day", async () => {
     const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
     const { existsSync } = await import("node:fs");

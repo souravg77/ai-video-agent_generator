@@ -1,6 +1,7 @@
 import type { PostRow, VideoRow } from "../agent/store.js";
 import { hours, type Report } from "../analytics/report.js";
 import type { CommentRow } from "../comments/index.js";
+import { uploadText } from "../publish/manual.js";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -53,6 +54,7 @@ td a { color: var(--accent); }
 .card.long video { aspect-ratio: 16/9; }
 .reply { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; display: grid; gap: 8px; min-width: 0; }
 .reply blockquote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 6px 6px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.upload summary { cursor: pointer; color: var(--accent); margin-top: 8px; } .upload a { color: var(--accent); }
 .reply .actions { display: flex; gap: 8px; margin: 0; } .reply a { color: var(--accent); }
 `;
 
@@ -71,7 +73,7 @@ function postChips(posts: PostRow[] = []): string {
   return posts
     .map((p) => {
       const ok = p.status === "published" || p.status === "scheduled";
-      const label = `${p.platform}: ${p.status}${p.status === "failed" ? ` (${p.attempts}/3)` : ""}`;
+      const label = `${p.platform}: ${p.status === "exported" ? "upload by hand" : p.status}${p.status === "failed" ? ` (${p.attempts}/3)` : ""}`;
       return p.url && ok
         ? `<a class="chip ok" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(label)}</a>`
         : `<span class="chip ${p.status === "failed" ? "bad" : ""}" title="${esc(p.error)}">${esc(label)}</span>`;
@@ -122,6 +124,23 @@ function replyCard(c: CommentRow): string {
 </article>`;
 }
 
+// Manual publish mode: the file to download and the text to paste, per platform.
+function uploadPanel(v: VideoRow, posts: PostRow[]): string {
+  const exported = posts.filter((p) => p.status === "exported");
+  if (!exported.length || !v.script) return "";
+  const script = { title: v.title ?? v.script.title, description: v.description ?? v.script.description, hashtags: v.hashtags.length ? v.hashtags : v.script.hashtags };
+  const boxes = exported.map((p) => {
+    const t = uploadText(p.platform, script, v.format === "long");
+    const id = `${esc(v.id)}-${esc(p.platform)}`;
+    return `${t.title ? `<label for="ut-${id}">${esc(p.platform)} title</label><input id="ut-${id}" readonly value="${esc(t.title)}">` : ""}
+    <label for="uc-${id}">${esc(p.platform)} ${t.title ? "description" : "caption"}</label><textarea id="uc-${id}" readonly rows="4">${esc(t.caption)}</textarea>`;
+  });
+  return `<details class="upload"><summary>Upload by hand</summary><div class="fields">
+    ${v.local_dir ? `<p><a href="/videos/${esc(v.id)}/file" download="${esc(v.id)}.mp4">Download video.mp4</a></p>` : `<p class="sub">The local file was cleaned up; use the copy in the ready/ folder.</p>`}
+    ${boxes.join("\n")}
+  </div></details>`;
+}
+
 function row(v: VideoRow, posts?: PostRow[]): string {
   const action =
     v.status === "failed"
@@ -138,6 +157,7 @@ function row(v: VideoRow, posts?: PostRow[]): string {
   ${v.angle && !v.title ? `<p class="sub">${esc(v.angle)}</p>` : ""}
   ${v.error ? `<p class="sub err">${esc(v.error)}</p>` : ""}
   ${posts?.length ? `<div class="chips">${postChips(posts)}</div>` : ""}
+  ${posts?.length ? uploadPanel(v, posts) : ""}
   ${action}
 </li>`;
 }

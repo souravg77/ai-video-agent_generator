@@ -1,0 +1,37 @@
+# Local mode in Docker: adds Ollama (the writing model) and builds the agent with Piper (the voice).
+# No Claude, ElevenLabs, Pexels, YouTube or Meta keys needed; finished videos land in out/ready/ to upload by hand.
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d
+#   docker compose exec ollama ollama pull qwen3:14b      (once; several GB)
+#   docker compose exec agent npm run local:setup -- --no-env   (once; downloads the Piper voice into models/)
+# With an NVIDIA GPU, uncomment the deploy block below to make writing much faster.
+services:
+  agent:
+    build:
+      context: .
+      args:
+        LOCAL_MODE: "true"
+    environment:
+      AGENT_MODE: local
+      OLLAMA_URL: http://ollama:11434
+    volumes:
+      - ./models:/app/models
+      - ./footage:/app/footage
+    depends_on:
+      ollama:
+        condition: service_started
+
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  ollama:
