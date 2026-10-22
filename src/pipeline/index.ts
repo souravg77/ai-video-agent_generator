@@ -96,6 +96,7 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
     log("Fetching visuals…");
     const visuals: string[] = [];
     const usedIds = new Set<number>();
+    const usedFiles = new Set<string>();
     for (const [i, scene] of script.scenes.entries()) {
       const visual = join(dir, `visual-${i}.mp4`);
       const reuse = opts.translateFrom && join(opts.translateFrom, `visual-${i}.mp4`);
@@ -106,9 +107,9 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
           costUsd += await generateClip(clipPrompt(scene.visual_query, scene.narration), visual, format);
         } catch (err) {
           log(`Generated clip failed (${(err as Error).message}); using stock footage instead.`);
-          await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, format });
+          await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, usedFiles, format });
         }
-      } else await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, format });
+      } else await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, usedFiles, format });
       visuals.push(visual);
     }
 

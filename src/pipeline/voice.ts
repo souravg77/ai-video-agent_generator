@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { config } from "../config.js";
 import { voiceCostUsd } from "../lib/costs.js";
 import { ffmpeg } from "../lib/ffmpeg.js";
+import { piperSpeak } from "./piper.js";
 
 const WORDS_PER_SECOND = 2.5;
 
@@ -12,8 +13,12 @@ export function estimateSpeechSeconds(text: string): number {
 
 // Writes an MP3 voice-over for one scene and returns what it cost.
 export async function synthesizeVoice(text: string, outPath: string, opts: { offline?: boolean } = {}): Promise<number> {
+  if (!opts.offline && config.TTS_PROVIDER === "piper") {
+    await piperSpeak(text, outPath);
+    return 0;
+  }
   if (opts.offline || !config.ELEVENLABS_API_KEY) {
-    if (!opts.offline) throw new Error("ELEVENLABS_API_KEY is not set. Add it to .env or run with --offline.");
+    if (!opts.offline) throw new Error("ELEVENLABS_API_KEY is not set. Add it to .env, use TTS_PROVIDER=piper (free, offline), or run with --offline.");
     // Silent track of the estimated speaking length, so timing and captions still line up.
     await ffmpeg(["-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", estimateSpeechSeconds(text).toFixed(2), "-q:a", "9", outPath]);
     return 0;

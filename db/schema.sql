@@ -94,3 +94,8 @@ CREATE INDEX IF NOT EXISTS comments_status_idx ON comments (status);
 
 -- Recommendations: hook-style experiments.
 ALTER TABLE videos ADD COLUMN IF NOT EXISTS hook_style text;
+
+-- Local mode: PUBLISH_MODE=manual exports videos for uploading by hand instead of posting them.
+ALTER TABLE posts DROP CONSTRAINT IF EXISTS posts_status_check;
+ALTER TABLE posts ADD CONSTRAINT posts_status_check CHECK (status IN
+  ('scheduled', 'uploading', 'processing', 'published', 'failed', 'exported'));

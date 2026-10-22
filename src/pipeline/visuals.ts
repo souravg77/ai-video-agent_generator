@@ -1,4 +1,6 @@
-import { writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { copyFile, readdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { config } from "../config.js";
 import { ffmpeg } from "../lib/ffmpeg.js";
 import { FRAME, type VideoFormat } from "./captions.js";
@@ -18,12 +20,49 @@ export const pickPortraitFile = (files: PexelsFile[]) => pickFile(files, "short"
 
 const OFFLINE_COLORS = ["0x1f3a5f", "0x3d5a40", "0x5f2a3a", "0x4a3f6b", "0x6b4f2a", "0x2a5f5c"];
 
+const PALETTES = [
+  ["0x1f3a5f", "0x6b2a5f", "0x2a5f5c"],
+  ["0x3d5a40", "0x1f3a5f", "0x8a6d1f"],
+  ["0x5f2a3a", "0x2a3f6b", "0x6b4f2a"],
+  ["0x4a3f6b", "0x1f5f4a", "0x6b2a3a"],
+  ["0x2a5f5c", "0x5f4a1f", "0x3a2a6b"],
+];
+
+// Slowly moving colour gradients: no download, no API, looks intentional behind big captions.
+export async function generatedBackground(outPath: string, seconds: number, format: VideoFormat, sceneIndex: number): Promise<void> {
+  const { width, height } = FRAME[format];
+  const [c0, c1, c2] = PALETTES[sceneIndex % PALETTES.length];
+  await ffmpeg([
+    "-f", "lavfi",
+    "-i", `gradients=s=${width}x${height}:c0=${c0}:c1=${c1}:c2=${c2}:nb_colors=3:speed=0.015:rate=30:seed=${sceneIndex + 1}:duration=${seconds.toFixed(2)}`,
+    "-pix_fmt", "yuv420p",
+    outPath,
+  ]);
+}
+
+const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv)$/i;
+const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
+
+// Picks the clip in your footage folder whose path shares the most words with the scene's search, e.g.
+// "ocean waves sunset" matches footage/nature/ocean-waves-01.mp4. Clips aren't reused within a video while others are left.
+export async function pickFromFolder(query: string, dir: string, used: Set<string>): Promise<string> {
+  const files = existsSync(dir) ? (await readdir(dir, { recursive: true })).map(String).filter((f) => VIDEO_EXT.test(f)).sort() : [];
+  if (!files.length) throw new Error(`No video clips in ${dir}/. Add some (named by what they show, e.g. ocean-waves.mp4) or use VISUALS_PROVIDER=generated.`);
+  const want = words(query);
+  const score = (f: string) => [...words(f)].filter((w) => want.has(w)).length;
+  const ranked = files.map((f) => ({ f, s: score(f) - (used.has(f) ? 100 : 0) })).sort((a, b) => b.s - a.s);
+  const best = ranked.filter((r) => r.s === ranked[0].s);
+  const choice = best[[...query].reduce((h, c) => h + c.charCodeAt(0), 0) % best.length].f;
+  used.add(choice);
+  return join(dir, choice);
+}
+
 // Downloads (or, offline, generates) a background clip for one scene.
 export async function fetchVisual(
   query: string,
   outPath: string,
   minSeconds: number,
-  opts: { offline?: boolean; sceneIndex?: number; usedIds?: Set<number>; format?: VideoFormat } = {},
+  opts: { offline?: boolean; sceneIndex?: number; usedIds?: Set<number>; usedFiles?: Set<string>; format?: VideoFormat } = {},
 ): Promise<void> {
   const format = opts.format ?? "short";
   const pick = (files: PexelsFile[]) => pickFile(files, format);
@@ -33,7 +72,15 @@ export async function fetchVisual(
     await ffmpeg(["-f", "lavfi", "-i", `color=c=${color}:s=${width}x${height}:r=30`, "-t", minSeconds.toFixed(2), "-pix_fmt", "yuv420p", outPath]);
     return;
   }
-  if (!config.PEXELS_API_KEY) throw new Error("PEXELS_API_KEY is not set. Add it to .env or run with --offline.");
+  if (config.VISUALS_PROVIDER === "generated") return generatedBackground(outPath, minSeconds, format, opts.sceneIndex ?? 0);
+  if (config.VISUALS_PROVIDER === "folder") {
+    const clip = await pickFromFolder(query, config.FOOTAGE_DIR, opts.usedFiles ?? new Set());
+    await copyFile(clip, outPath);
+    return;
+  }
+  if (!config.PEXELS_API_KEY) {
+    throw new Error("PEXELS_API_KEY is not set (it's free at pexels.com/api). Or use VISUALS_PROVIDER=folder or generated, or run with --offline.");
+  }
 
   const url = new URL("https://api.pexels.com/videos/search");
   url.searchParams.set("query", query);

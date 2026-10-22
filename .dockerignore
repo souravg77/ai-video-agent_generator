@@ -4,3 +4,5 @@ out
 brands/*.env
 !brands/example.env
 .git
+models
+footage

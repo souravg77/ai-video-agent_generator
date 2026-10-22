@@ -1,7 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
-import { z } from "zod/v4"; // the SDK's zodOutputFormat helper needs zod v4 schemas
-import { config } from "../config.js";
+import { z } from "zod/v4"; // structured output helpers need zod v4 schemas
+import { askJson } from "../lib/llm.js";
 import type { VideoFormat } from "../pipeline/captions.js";
 
 export const IdeaSchema = z.object({
@@ -40,17 +38,10 @@ Earlier videos, newest first:
 ${history}${winners}`;
 }
 
-export function claudePlanner(niche: string, opts: PlanOptions = {}, client = new Anthropic()): Planner {
+export function aiPlanner(niche: string, opts: PlanOptions = {}): Planner {
   return async (count, past) => {
     if (count <= 0) return [];
-    const response = await client.messages.parse({
-      model: config.CLAUDE_MODEL,
-      max_tokens: 16000,
-      output_config: { effort: "medium", format: zodOutputFormat(PlanSchema) },
-      messages: [{ role: "user", content: planningPrompt(niche, count, past, opts) }],
-    });
-    if (response.stop_reason === "refusal") throw new Error("Claude declined to plan ideas for this niche.");
-    if (!response.parsed_output) throw new Error("Claude's plan did not match the expected format.");
-    return response.parsed_output.ideas.filter((i) => i.topic.trim()).slice(0, count);
+    const { data } = await askJson({ schema: PlanSchema, user: planningPrompt(niche, count, past, opts), maxTokens: 16000, what: "plan ideas for this niche" });
+    return data.ideas.filter((i) => i.topic.trim()).slice(0, count);
   };
 }

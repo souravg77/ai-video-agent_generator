@@ -4,13 +4,30 @@ Generates short vertical videos (script → voice → render) and posts them to 
 
 Status: **Phase 6**. The agent plans ideas, makes videos, waits for your approval on a review page, posts them on schedule to YouTube, Facebook and Instagram, tracks how each one does, and sends a weekly report. It can run several channels side by side, make long 16:9 YouTube videos, work in other languages and draft replies to comments for you to approve: see [docs/scaling.md](docs/scaling.md). Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
 
+## Free, offline mode
+
+No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`. Ollama writes, Piper speaks, backgrounds are generated, and finished videos are exported for you to upload by hand. See [docs/local-mode.md](docs/local-mode.md).
+
+## Claude skills
+
+`.claude/skills/` teaches Claude Code to work with this agent: `video-agent-setup` (install and connect accounts, cloud or local), `video-agent-operate` (make, post, monitor, fix failures) and `video-content-strategy` (niche, hooks, reading the report). Open the repo in Claude Code and ask, for example, "set up local mode" or "why did yesterday's post fail?".
+
 ## Setup
 
 ```sh
 npm install
-cp .env.example .env
+npm run setup          # for each step, pick a free local tool or connect an API; enters keys and signs you in
 npm run check          # shows what's configured and tests each credential
 ```
+
+| Step | Connect an API | Or run locally, free |
+| --- | --- | --- |
+| Writing | Claude | Ollama |
+| Voice | ElevenLabs | Piper |
+| Footage | Pexels | your own clips, or generated backgrounds |
+| Posting | YouTube, Facebook and Instagram APIs | export files and upload by hand |
+
+Run `npm run setup` again any time to switch a step. Or edit `.env` by hand (copy `.env.example`).
 
 Follow [docs/phase0-setup.md](docs/phase0-setup.md) to fill in `.env`. Making videos also needs [FFmpeg](https://ffmpeg.org/download.html) installed.
 
@@ -145,7 +162,9 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | `npm run post` | Posts a finished video to YouTube, Facebook and Instagram |
 | `npm run post:youtube` | Uploads a finished video to YouTube (see above) |
 | `npm test` | Tests (set `TEST_DATABASE_URL` to an empty Postgres database to include the agent tests; its tables get emptied) |
-| `npm run check` | Lists missing settings and tests DB, YouTube, Facebook and Instagram access |
+| `npm run check` | Lists missing settings and tests DB, YouTube, Facebook and Instagram access (or Ollama, Piper and footage in local mode) |
+| `npm run setup` | Guided setup: local tool or API for each step, keys, sign-ins, then the check |
+| `npm run local:setup` | Gets local mode ready: Ollama model, Piper and its voice, footage folder |
 | `npm run auth:youtube` | One-time Google sign-in; saves `YOUTUBE_REFRESH_TOKEN` |
 | `npm run auth:meta` | Exchanges a Graph API Explorer token for a long-lived Page token and finds the Instagram account |
 | `npm run db:migrate` | Creates or updates the `videos`, `posts`, `post_stats` and `agent_state` tables |
@@ -160,7 +179,7 @@ src/agent/          planner, posting slots, job queue in Postgres, worker loop, 
 src/analytics/      stats from each platform, weekly report
 src/comments/      fetching comments, Claude's reply drafts, sending approved replies
 src/review/         review page (watch, edit, approve, reject, retry), report page, privacy pages
-src/lib/            helpers (YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
+src/lib/            helpers (Claude/Ollama, YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
 scripts/            CLI entry points (make-video, setup and auth)
 test/               unit tests
 db/schema.sql       Postgres schema

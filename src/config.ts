@@ -16,8 +16,28 @@ dotenv.config();
 const optional = z.string().optional().transform((v) => (v ? v : undefined));
 
 const schema = z.object({
+  // local = no paid APIs: Ollama for writing, Piper for voice, generated backgrounds, manual posting.
+  // It only changes the defaults below; each setting can still be set on its own.
+  AGENT_MODE: z.enum(["cloud", "local"]).default("cloud"),
+  LLM_PROVIDER: z.enum(["claude", "ollama"]).optional(),
+  TTS_PROVIDER: z.enum(["elevenlabs", "piper"]).optional(),
+  VISUALS_PROVIDER: z.enum(["pexels", "folder", "generated"]).optional(),
+  PUBLISH_MODE: z.enum(["api", "manual"]).optional(),
+
   ANTHROPIC_API_KEY: optional,
   CLAUDE_MODEL: z.string().default("claude-opus-5-5"),
+
+  // Ollama (ollama.com) runs open models on your own computer
+  OLLAMA_URL: z.string().default("http://localhost:11434"),
+  OLLAMA_MODEL: z.string().default("qwen3:14b"),
+  OLLAMA_CONTEXT: z.coerce.number().int().default(16384),
+
+  // Piper (free, offline text to speech): the voice model file (.onnx) and the piper command
+  PIPER_VOICE: z.string().default("models/en_US-lessac-medium.onnx"),
+  PIPER_PATH: z.string().default("piper"),
+
+  // Your own clips for VISUALS_PROVIDER=folder; file names are matched to each scene's search words
+  FOOTAGE_DIR: z.string().default("footage"),
 
   ELEVENLABS_API_KEY: optional,
   ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
@@ -113,13 +133,23 @@ const schema = z.object({
     .transform((v) => v === "true"),
 });
 
-export type Config = Omit<z.infer<typeof schema>, "OUT_DIR"> & { OUT_DIR: string };
+type Providers = {
+  LLM_PROVIDER: "claude" | "ollama";
+  TTS_PROVIDER: "elevenlabs" | "piper";
+  VISUALS_PROVIDER: "pexels" | "folder" | "generated";
+  PUBLISH_MODE: "api" | "manual";
+};
+export type Config = Omit<z.infer<typeof schema>, "OUT_DIR" | keyof Providers> & { OUT_DIR: string } & Providers;
 
 const parsed = schema.parse(process.env);
 export const config: Config = {
   ...parsed,
   DB_SCHEMA: parsed.DB_SCHEMA ?? (BRAND ? BRAND.toLowerCase().replace(/[^a-z0-9_]/g, "_").replace(/^(\d)/, "_$1") : undefined),
   OUT_DIR: parsed.OUT_DIR ?? (BRAND ? `out/${BRAND}` : "out"),
+  LLM_PROVIDER: parsed.LLM_PROVIDER ?? (parsed.AGENT_MODE === "local" ? "ollama" : "claude"),
+  TTS_PROVIDER: parsed.TTS_PROVIDER ?? (parsed.AGENT_MODE === "local" ? "piper" : "elevenlabs"),
+  VISUALS_PROVIDER: parsed.VISUALS_PROVIDER ?? (parsed.AGENT_MODE === "local" ? "generated" : "pexels"),
+  PUBLISH_MODE: parsed.PUBLISH_MODE ?? (parsed.AGENT_MODE === "local" ? "manual" : "api"),
 };
 
 // Groups of settings each phase needs; used by the setup check.

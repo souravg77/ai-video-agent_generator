@@ -5,7 +5,9 @@
 import { parseArgs } from "node:util";
 import { closeDb } from "../src/lib/db.js";
 import type { Privacy } from "../src/lib/youtube.js";
+import { config } from "../src/config.js";
 import { parsePlatforms, publish } from "../src/publish/index.js";
+import { exportForUpload } from "../src/publish/manual.js";
 import { loadRun } from "../src/publish/run-dir.js";
 
 const { values } = parseArgs({
@@ -26,19 +28,25 @@ try {
 
   const run = await loadRun(values.dir);
   console.log(`Video: ${run.videoPath}`);
-  const results = await publish(run, platforms, {
-    privacy: values.privacy as Privacy,
-    scheduleAt,
-    containsSyntheticMedia: values.synthetic,
-    log: (m) => console.log(m),
-  });
+  if (config.PUBLISH_MODE === "manual") {
+    const { dir, results } = await exportForUpload(run, platforms, config.OUT_DIR);
+    for (const r of results) if (!r.ok) console.log(`✗ ${r.platform.padEnd(9)} ${r.error}`);
+    console.log(`\nReady to upload by hand: ${dir}\nOpen UPLOAD.md there for the steps.`);
+  } else {
+    const results = await publish(run, platforms, {
+      privacy: values.privacy as Privacy,
+      scheduleAt,
+      containsSyntheticMedia: values.synthetic,
+      log: (m) => console.log(m),
+    });
 
-  console.log("");
-  for (const r of results) {
-    if (r.ok) console.log(`✓ ${r.platform.padEnd(9)} ${r.outcome.url ?? r.outcome.externalId}${r.outcome.scheduledFor ? ` (scheduled ${r.outcome.scheduledFor})` : ""}`);
-    else console.log(`✗ ${r.platform.padEnd(9)} ${r.error}`);
+    console.log("");
+    for (const r of results) {
+      if (r.ok) console.log(`✓ ${r.platform.padEnd(9)} ${r.outcome.url ?? r.outcome.externalId}${r.outcome.scheduledFor ? ` (scheduled ${r.outcome.scheduledFor})` : ""}`);
+      else console.log(`✗ ${r.platform.padEnd(9)} ${r.error}`);
+    }
+    if (results.some((r) => !r.ok)) process.exitCode = 1;
   }
-  if (results.some((r) => !r.ok)) process.exitCode = 1;
 } catch (err) {
   console.error(`\nFailed: ${(err as Error).message}`);
   process.exitCode = 1;

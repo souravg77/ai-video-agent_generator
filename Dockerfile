@@ -7,6 +7,14 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# Local mode (docker-compose.local.yml) adds Piper for offline voice-overs.
+ARG LOCAL_MODE=false
+RUN if [ "$LOCAL_MODE" = "true" ]; then \
+    apt-get update && apt-get install -y --no-install-recommends python3-pip \
+    && pip install --no-cache-dir --break-system-packages piper-tts \
+    && rm -rf /var/lib/apt/lists/*; \
+  fi
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
