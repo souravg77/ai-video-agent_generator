@@ -17,7 +17,9 @@
     "make": "tsx scripts/make-video.ts",
     "test": "tsx --test test/*.test.ts",
     "post:youtube": "tsx scripts/post-youtube.ts",
-    "post": "tsx scripts/post.ts"
+    "post": "tsx scripts/post.ts",
+    "agent": "tsx scripts/agent.ts",
+    "agent:add": "tsx scripts/agent-add.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

@@ -11,6 +11,9 @@ import { synthesizeVoice } from "./voice.js";
 
 export type MakeVideoOptions = {
   topic: string;
+  angle?: string;
+  // An existing videos row to fill in (used by the agent); otherwise a new row is created when a database is set up.
+  videoId?: string;
   outDir?: string;
   offline?: boolean;
   musicPath?: string;
@@ -38,12 +41,11 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
   const dir = join(opts.outDir ?? "out", `${stamp}-${slug(opts.topic)}`);
   await mkdir(dir, { recursive: true });
 
-  const useDb = !opts.offline && dbConfigured();
-  const videoId = useDb ? await createVideo(opts.topic) : undefined;
+  const videoId = opts.videoId ?? (!opts.offline && dbConfigured() ? await createVideo(opts.topic) : undefined);
 
   try {
     log("Writing script…");
-    const script = opts.offline ? sampleScript(opts.topic) : await generateScript(opts.topic);
+    const script = opts.offline ? sampleScript(opts.topic) : await generateScript(opts.topic, opts.angle);
     await writeFile(join(dir, "script.json"), JSON.stringify(script, null, 2));
     if (videoId) await updateVideo(videoId, { status: "rendering", script, title: script.title, description: script.description, hashtags: script.hashtags });
 
@@ -81,7 +83,7 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
       url = await uploadFile(videoPath, storageKey, "video/mp4");
     }
 
-    if (videoId) await updateVideo(videoId, { status: "rendered", storage_key: storageKey, duration_sec: durationSec });
+    if (videoId) await updateVideo(videoId, { status: "rendered", storage_key: storageKey, duration_sec: durationSec, local_dir: dir, public_url: url, error: null });
     await writeFile(join(dir, "result.json"), JSON.stringify({ videoId, videoPath, durationSec, url }, null, 2));
     return { dir, videoPath, script, durationSec, videoId, url };
   } catch (err) {

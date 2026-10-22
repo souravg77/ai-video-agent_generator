@@ -45,3 +45,18 @@ CREATE TABLE IF NOT EXISTS post_stats (
 );
 
 CREATE INDEX IF NOT EXISTS posts_due_idx ON posts (scheduled_for) WHERE status = 'scheduled';
+
+-- Phase 4: the agent's calendar and review queue live on the videos table.
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS angle text;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS publish_at timestamptz;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS platforms text[] NOT NULL DEFAULT '{youtube,facebook,instagram}';
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS local_dir text;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS public_url text;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS review_note text;
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
+
+ALTER TABLE videos DROP CONSTRAINT IF EXISTS videos_status_check;
+ALTER TABLE videos ADD CONSTRAINT videos_status_check CHECK (status IN
+  ('idea', 'scripted', 'rendering', 'rendered', 'approved', 'rejected', 'posting', 'posted', 'failed'));
+
+CREATE INDEX IF NOT EXISTS videos_status_publish_idx ON videos (status, publish_at);

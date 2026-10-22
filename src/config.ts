@@ -31,6 +31,21 @@ const schema = z.object({
   META_PAGE_ACCESS_TOKEN: optional,
   META_IG_USER_ID: optional,
   META_GRAPH_VERSION: z.string().default("v21.0"),
+
+  // Agent (phase 4)
+  AGENT_NICHE: optional,
+  AGENT_POST_TIMES_UTC: z.string().default("15:00"),
+  AGENT_PLATFORMS: z.string().default("youtube,facebook,instagram"),
+  AGENT_PLAN_DAYS: z.coerce.number().int().min(1).max(30).default(7),
+  AGENT_RENDER_LEAD_HOURS: z.coerce.number().min(1).default(36),
+  AGENT_AUTO_APPROVE: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  AGENT_TICK_SECONDS: z.coerce.number().int().min(10).default(60),
+  REVIEW_PORT: z.coerce.number().int().default(3000),
+  REVIEW_PASSWORD: optional,
+  ALERT_WEBHOOK_URL: optional,
 });
 
 export type Config = z.infer<typeof schema>;
