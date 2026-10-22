@@ -4,11 +4,9 @@ These steps need your own logins, so they can't be done for you. Work top to bot
 
 Start steps 2 and 3 first. Their reviews take days to weeks and run while the rest gets built.
 
-## 1. Repo and local setup (10 min)
+## 1. Local setup (5 min)
 
-1. Create an empty GitHub repo, e.g. `souravg77/ai-video-agent` (private is fine). Don't add a README.
-2. Tell Claude the repo name so this scaffold can be pushed to it.
-3. Locally: `npm install`, then `cp .env.example .env`.
+1. Clone this repo, then run `npm install` and `cp .env.example .env`.
 
 ## 2. YouTube: Google Cloud project (30 min, then the audit wait)
 
