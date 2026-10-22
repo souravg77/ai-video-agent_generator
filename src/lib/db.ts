@@ -7,7 +7,7 @@ export function dbConfigured(): boolean {
   return Boolean(config.DATABASE_URL);
 }
 
-function db(): pg.Pool {
+export function db(): pg.Pool {
   if (!config.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
   pool ??= new pg.Pool({ connectionString: config.DATABASE_URL });
   return pool;
@@ -26,10 +26,12 @@ type VideoUpdate = Partial<{
   hashtags: string[];
   storage_key: string;
   duration_sec: number;
-  error: string;
+  error: string | null;
+  local_dir: string;
+  public_url: string;
 }>;
 
-const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error"]);
+const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error", "local_dir", "public_url"]);
 
 export async function updateVideo(id: string, fields: VideoUpdate): Promise<void> {
   const entries = Object.entries(fields).filter(([k, v]) => COLUMNS.has(k) && v !== undefined);

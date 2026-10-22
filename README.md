@@ -2,7 +2,7 @@
 
 Generates short vertical videos (script → voice → render) and posts them to YouTube, Facebook Page Reels and Instagram Reels, with a human approval step.
 
-Status: **Phase 3** (make a video, post it to YouTube, Facebook and Instagram). Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
+Status: **Phase 4**. The agent plans ideas, makes videos, waits for your approval on a review page, and posts them on schedule to YouTube, Facebook and Instagram. Phase 0 setup is in [docs/phase0-setup.md](docs/phase0-setup.md). See the [roadmap](https://claude.ai/artifact/PHhmQZ2a6pdjzzVFQNaWyc).
 
 ## Setup
 
@@ -13,6 +13,33 @@ npm run check          # shows what's configured and tests each credential
 ```
 
 Follow [docs/phase0-setup.md](docs/phase0-setup.md) to fill in `.env`. Making videos also needs [FFmpeg](https://ffmpeg.org/download.html) installed.
+
+## Run the agent
+
+```sh
+npm run db:migrate          # once, and again after updates
+npm run agent               # keeps running; review page at http://localhost:3000
+```
+
+Every minute the agent:
+
+1. **Plans**: keeps the next `AGENT_PLAN_DAYS` days of posting slots (`AGENT_POST_TIMES_UTC`) filled with ideas Claude proposes for your `AGENT_NICHE`, avoiding repeats and leaning toward topics that got views.
+2. **Makes**: turns the next idea due within `AGENT_RENDER_LEAD_HOURS` into a video (one per minute).
+3. **Waits for you**: the video shows up on the review page. Watch it, edit the title, description, hashtags or time, then **Approve** or **Reject**. Rejected slots are refilled with a new idea. Set `AGENT_AUTO_APPROVE=true` to skip review.
+4. **Posts**: at the slot time, posts approved videos to `AGENT_PLATFORMS`. A platform that fails is retried on the next minutes, up to 3 tries, without re-posting to the platforms that worked. Then the video is marked failed and a **Retry** button appears.
+5. **Alerts**: failures are logged and sent to `ALERT_WEBHOOK_URL` if set (a Slack or Discord incoming webhook).
+
+Other ways to run it:
+
+```sh
+npm run agent -- --once                                   # one pass, e.g. from cron every few minutes
+npm run agent -- --offline                                # sample ideas and offline renders, to try the review page without API keys
+npm run agent:add -- --topic "why cats purr" --at 2026-11-01T15:00:00Z   # add your own idea to the calendar
+```
+
+The review page only listens on this computer unless `REVIEW_PASSWORD` is set; with a password it's open to your network (sign in with any username). Use a tunnel or a server with HTTPS before exposing it to the internet.
+
+The agent needs `DATABASE_URL`. A crash mid-render or mid-post is recovered automatically after an hour.
 
 ## Make a video
 
@@ -67,9 +94,11 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | Command | What it does |
 | --- | --- |
 | `npm run make -- --topic "…"` | Generates a video (see above) |
+| `npm run agent` | Runs the agent and the review page |
+| `npm run agent:add -- --topic "…" --at …` | Adds an idea to the calendar |
 | `npm run post` | Posts a finished video to YouTube, Facebook and Instagram |
 | `npm run post:youtube` | Uploads a finished video to YouTube (see above) |
-| `npm test` | Unit tests |
+| `npm test` | Tests (set `TEST_DATABASE_URL` to an empty Postgres database to include the agent tests; its tables get emptied) |
 | `npm run check` | Lists missing settings and tests DB, YouTube, Facebook and Instagram access |
 | `npm run auth:youtube` | One-time Google sign-in; saves `YOUTUBE_REFRESH_TOKEN` |
 | `npm run auth:meta` | Exchanges a Graph API Explorer token for a long-lived Page token and finds the Instagram account |
@@ -81,6 +110,8 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 src/config.ts       env loading and per-integration requirements
 src/pipeline/       script, voice, visuals, captions, render, orchestration
 src/publish/        posting a finished video to YouTube, Facebook and Instagram
+src/agent/          planner, posting slots, job queue in Postgres, worker loop, alerts
+src/review/         review page (watch, edit, approve, reject, retry)
 src/lib/            helpers (YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
 scripts/            CLI entry points (make-video, setup and auth)
 test/               unit tests

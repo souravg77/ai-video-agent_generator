@@ -26,13 +26,14 @@ Open with a hook that creates curiosity. Keep sentences short and spoken, not wr
 Every visual_query must describe footage that plausibly exists on a stock site.
 Stay factual; do not invent statistics.`;
 
-export async function generateScript(topic: string, client = new Anthropic()): Promise<VideoScript> {
+export async function generateScript(topic: string, angle?: string, client = new Anthropic()): Promise<VideoScript> {
+  const ask = angle ? `Write a short video script about: ${topic}\nAngle: ${angle}` : `Write a short video script about: ${topic}`;
   const response = await client.messages.parse({
     model: config.CLAUDE_MODEL,
     max_tokens: 16000,
     output_config: { effort: "medium", format: zodOutputFormat(VideoScriptSchema) },
     system: SYSTEM,
-    messages: [{ role: "user", content: `Write a short video script about: ${topic}` }],
+    messages: [{ role: "user", content: ask }],
   });
   if (response.stop_reason === "refusal") throw new Error(`Claude declined to write a script for "${topic}".`);
   if (response.stop_reason === "max_tokens") throw new Error("Script generation hit max_tokens before finishing.");
