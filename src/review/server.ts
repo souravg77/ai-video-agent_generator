@@ -4,7 +4,8 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import * as store from "../agent/store.js";
-import { renderPage } from "./page.js";
+import { buildReport } from "../analytics/report.js";
+import { renderPage, renderReportPage } from "./page.js";
 
 export type ReviewServerOptions = { port: number; password?: string; host?: string };
 
@@ -92,6 +93,10 @@ async function handle(req: IncomingMessage, res: ServerResponse, opts: ReviewSer
     return void res.end(renderPage({ review, upcoming, recent, posts, now, flash: url.searchParams.get("flash") ?? undefined }));
   }
   if (req.method === "GET" && url.pathname === "/health") return void res.end("ok");
+  if (req.method === "GET" && url.pathname === "/report") {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+    return void res.end(renderReportPage(await buildReport(new Date())));
+  }
 
   const m = /^\/videos\/([^/]+)\/(file|approve|reject|retry)$/.exec(url.pathname);
   if (!m || !UUID.test(m[1])) return void res.writeHead(404).end("Not found");

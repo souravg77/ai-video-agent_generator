@@ -60,3 +60,10 @@ ALTER TABLE videos ADD CONSTRAINT videos_status_check CHECK (status IN
   ('idea', 'scripted', 'rendering', 'rendered', 'approved', 'rejected', 'posting', 'posted', 'failed'));
 
 CREATE INDEX IF NOT EXISTS videos_status_publish_idx ON videos (status, publish_at);
+
+-- Phase 5: small key/value store for the agent's own bookkeeping (last stats run, last weekly report).
+CREATE TABLE IF NOT EXISTS agent_state (
+  key        text PRIMARY KEY,
+  value      text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);

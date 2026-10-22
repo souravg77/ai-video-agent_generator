@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod/v4"; // the SDK's zodOutputFormat helper needs zod v4 schemas
 import { config } from "../config.js";
+import { claudeCostUsd } from "../lib/costs.js";
 
 export const SceneSchema = z.object({
   narration: z.string().describe("What the voice-over says in this scene, one or two short sentences"),
@@ -26,7 +27,7 @@ Open with a hook that creates curiosity. Keep sentences short and spoken, not wr
 Every visual_query must describe footage that plausibly exists on a stock site.
 Stay factual; do not invent statistics.`;
 
-export async function generateScript(topic: string, angle?: string, client = new Anthropic()): Promise<VideoScript> {
+export async function generateScript(topic: string, angle?: string, client = new Anthropic()): Promise<{ script: VideoScript; costUsd: number }> {
   const ask = angle ? `Write a short video script about: ${topic}\nAngle: ${angle}` : `Write a short video script about: ${topic}`;
   const response = await client.messages.parse({
     model: config.CLAUDE_MODEL,
@@ -38,7 +39,7 @@ export async function generateScript(topic: string, angle?: string, client = new
   if (response.stop_reason === "refusal") throw new Error(`Claude declined to write a script for "${topic}".`);
   if (response.stop_reason === "max_tokens") throw new Error("Script generation hit max_tokens before finishing.");
   if (!response.parsed_output) throw new Error("Claude's script did not match the expected format.");
-  return normalizeScript(response.parsed_output);
+  return { script: normalizeScript(response.parsed_output), costUsd: claudeCostUsd(config.CLAUDE_MODEL, response.usage) };
 }
 
 // Cleans model output so later steps can rely on it.

@@ -77,13 +77,17 @@ export function buildYouTubeMetadata(input: YouTubeMetadataInput): youtube_v3.Sc
   };
 }
 
-export function youtubeClient(): youtube_v3.Youtube {
+export function googleAuth() {
   if (!config.GOOGLE_CLIENT_ID || !config.GOOGLE_CLIENT_SECRET || !config.YOUTUBE_REFRESH_TOKEN) {
     throw new Error("YouTube is not connected. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, then run `npm run auth:youtube`.");
   }
   const auth = new google.auth.OAuth2(config.GOOGLE_CLIENT_ID, config.GOOGLE_CLIENT_SECRET);
   auth.setCredentials({ refresh_token: config.YOUTUBE_REFRESH_TOKEN });
-  return google.youtube({ version: "v3", auth });
+  return auth;
+}
+
+export function youtubeClient(): youtube_v3.Youtube {
+  return google.youtube({ version: "v3", auth: googleAuth() });
 }
 
 type ApiError = { code?: number | string; status?: number; message?: string; errors?: { reason?: string }[]; response?: { data?: { error?: string } } };

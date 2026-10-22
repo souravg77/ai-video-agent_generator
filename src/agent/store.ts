@@ -39,19 +39,31 @@ export async function insertIdeas(ideas: { topic: string; angle: string; publish
   }
 }
 
-// Recent titles with their best view count so far, newest first.
+// Recent titles with their total views across platforms (latest snapshot per post), newest first.
 export async function pastVideos(limit = 30): Promise<{ title: string; views: number | null }[]> {
   const { rows } = await db().query<{ title: string; views: string | null }>(
-    `SELECT COALESCE(v.title, v.topic) AS title, MAX(s.views) AS views
+    `SELECT COALESCE(v.title, v.topic) AS title, SUM(latest.views) AS views
        FROM videos v
        LEFT JOIN posts p ON p.video_id = v.id
-       LEFT JOIN post_stats s ON s.post_id = p.id
+       LEFT JOIN LATERAL (SELECT views FROM post_stats s WHERE s.post_id = p.id ORDER BY captured_at DESC LIMIT 1) latest ON true
       GROUP BY v.id
       ORDER BY v.created_at DESC
       LIMIT $1`,
     [limit],
   );
   return rows.map((r) => ({ title: r.title, views: r.views == null ? null : Number(r.views) }));
+}
+
+export async function getState(key: string): Promise<string | undefined> {
+  const { rows } = await db().query<{ value: string }>("SELECT value FROM agent_state WHERE key = $1", [key]);
+  return rows[0]?.value;
+}
+
+export async function setState(key: string, value: string): Promise<void> {
+  await db().query(
+    "INSERT INTO agent_state (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+    [key, value],
+  );
 }
 
 // Atomically moves the next eligible video from one status to another, so two workers never take the same one.

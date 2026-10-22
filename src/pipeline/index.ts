@@ -26,6 +26,7 @@ export type MakeVideoResult = {
   videoPath: string;
   script: VideoScript;
   durationSec: number;
+  costUsd: number;
   videoId?: string;
   url?: string;
 };
@@ -45,7 +46,10 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
 
   try {
     log("Writing script…");
-    const script = opts.offline ? sampleScript(opts.topic) : await generateScript(opts.topic, opts.angle);
+    let costUsd = 0;
+    let script: VideoScript;
+    if (opts.offline) script = sampleScript(opts.topic);
+    else ({ script, costUsd } = await generateScript(opts.topic, opts.angle));
     await writeFile(join(dir, "script.json"), JSON.stringify(script, null, 2));
     if (videoId) await updateVideo(videoId, { status: "rendering", script, title: script.title, description: script.description, hashtags: script.hashtags });
 
@@ -54,7 +58,7 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
     const durations: number[] = [];
     for (const [i, scene] of script.scenes.entries()) {
       const voice = join(dir, `voice-${i}.mp3`);
-      await synthesizeVoice(scene.narration, voice, { offline: opts.offline });
+      costUsd += await synthesizeVoice(scene.narration, voice, { offline: opts.offline });
       voices.push(voice);
       durations.push((await probeDuration(voice)) + SCENE_PADDING_SEC);
     }
@@ -83,9 +87,9 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
       url = await uploadFile(videoPath, storageKey, "video/mp4");
     }
 
-    if (videoId) await updateVideo(videoId, { status: "rendered", storage_key: storageKey, duration_sec: durationSec, local_dir: dir, public_url: url, error: null });
-    await writeFile(join(dir, "result.json"), JSON.stringify({ videoId, videoPath, durationSec, url }, null, 2));
-    return { dir, videoPath, script, durationSec, videoId, url };
+    if (videoId) await updateVideo(videoId, { status: "rendered", storage_key: storageKey, duration_sec: durationSec, local_dir: dir, public_url: url, error: null, cost_usd: costUsd });
+    await writeFile(join(dir, "result.json"), JSON.stringify({ videoId, videoPath, durationSec, url, costUsd }, null, 2));
+    return { dir, videoPath, script, durationSec, videoId, url, costUsd };
   } catch (err) {
     if (videoId) await updateVideo(videoId, { status: "failed", error: (err as Error).message }).catch(() => {});
     throw err;

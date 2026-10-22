@@ -24,7 +24,7 @@ Start steps 2 and 3 first. Their reviews take days to weeks and run while the re
 2. In the Instagram app: **Settings → Account type → Switch to professional** (Creator or Business). Then link it to the Page (Page settings → Linked accounts → Instagram, or Meta Business Suite).
 3. Go to https://developers.facebook.com → **My Apps → Create app**, type **Business**. Add the **Facebook Login for Business** and **Instagram** products.
 4. Copy **App ID** and **App secret** (App settings → Basic) to `.env` as `META_APP_ID` / `META_APP_SECRET`.
-5. Open **Graph API Explorer**, choose your app, and request: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`, `business_management`. Generate a **User token**, paste it into `.env` as `META_SHORT_LIVED_USER_TOKEN`.
+5. Open **Graph API Explorer**, choose your app, and request: `pages_show_list`, `pages_read_engagement`, `pages_manage_posts`, `instagram_basic`, `instagram_content_publish`, `business_management`, and for the weekly stats `read_insights` and `instagram_manage_insights`. Generate a **User token**, paste it into `.env` as `META_SHORT_LIVED_USER_TOKEN`.
 6. Run `npm run auth:meta`. This writes `META_PAGE_ID`, a long-lived `META_PAGE_ACCESS_TOKEN`, and `META_IG_USER_ID`.
 7. Because you're an admin of the app, development mode is enough to post to **your own** Page and Instagram. Only if you'll post for other people: start **Business Verification** (Business settings → Security centre) and later submit **App Review** for Advanced Access.
 

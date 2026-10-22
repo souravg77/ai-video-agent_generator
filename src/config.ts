@@ -9,6 +9,7 @@ const schema = z.object({
 
   ELEVENLABS_API_KEY: optional,
   ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
+  ELEVENLABS_USD_PER_1K_CHARS: z.coerce.number().min(0).default(0.3),
   PEXELS_API_KEY: optional,
   FFMPEG_PATH: z.string().default("ffmpeg"),
   FFPROBE_PATH: z.string().default("ffprobe"),
@@ -46,6 +47,9 @@ const schema = z.object({
   REVIEW_PORT: z.coerce.number().int().default(3000),
   REVIEW_PASSWORD: optional,
   ALERT_WEBHOOK_URL: optional,
+  AGENT_STATS_HOURS: z.coerce.number().min(1).default(6),
+  // 0 = Sunday … 6 = Saturday; the weekly report goes out on this day after 09:00 UTC
+  AGENT_REPORT_WEEKDAY: z.coerce.number().int().min(0).max(6).default(1),
 });
 
 export type Config = z.infer<typeof schema>;

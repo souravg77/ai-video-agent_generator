@@ -29,9 +29,10 @@ type VideoUpdate = Partial<{
   error: string | null;
   local_dir: string;
   public_url: string;
+  cost_usd: number;
 }>;
 
-const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error", "local_dir", "public_url"]);
+const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error", "local_dir", "public_url", "cost_usd"]);
 
 export async function updateVideo(id: string, fields: VideoUpdate): Promise<void> {
   const entries = Object.entries(fields).filter(([k, v]) => COLUMNS.has(k) && v !== undefined);
