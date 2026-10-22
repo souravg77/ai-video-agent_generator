@@ -8,6 +8,10 @@ Status: **Phase 6**. The agent plans ideas, makes videos, waits for your approva
 
 No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`. Ollama writes, Piper speaks, backgrounds are generated, and finished videos are exported for you to upload by hand. See [docs/local-mode.md](docs/local-mode.md).
 
+## Claude skills
+
+`.claude/skills/` teaches Claude Code to work with this agent: `video-agent-setup` (install and connect accounts, cloud or local), `video-agent-operate` (make, post, monitor, fix failures) and `video-content-strategy` (niche, hooks, reading the report). Open the repo in Claude Code and ask, for example, "set up local mode" or "why did yesterday's post fail?".
+
 ## Setup
 
 ```sh
