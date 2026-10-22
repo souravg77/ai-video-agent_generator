@@ -1,0 +1,52 @@
+# Agent + Postgres + Caddy (automatic HTTPS for the review page).
+#   1. Point a DNS name at the server and set DOMAIN and REVIEW_PASSWORD in .env
+#   2. docker compose up -d
+#   3. docker compose logs -f agent
+# Using Neon or Supabase instead of the bundled Postgres: set DATABASE_URL in .env and remove the db service.
+services:
+  agent:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://agent:agent@db:5432/agent}
+      REVIEW_HOST: 0.0.0.0
+    volumes:
+      - ./out:/app/out
+      - ./brands:/app/brands
+      - ./.env:/app/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    # Several brands: command: npm run agents
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: agent
+      POSTGRES_DB: agent
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "agent"]
+      interval: 5s
+      retries: 10
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      REVIEW_PORT: ${REVIEW_PORT:-3000}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+
+volumes:
+  pgdata:
+  caddy:

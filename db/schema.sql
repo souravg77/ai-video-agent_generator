@@ -91,3 +91,6 @@ CREATE TABLE IF NOT EXISTS comments (
 );
 
 CREATE INDEX IF NOT EXISTS comments_status_idx ON comments (status);
+
+-- Recommendations: hook-style experiments.
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS hook_style text;

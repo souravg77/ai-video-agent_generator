@@ -113,6 +113,20 @@ function isRetryable(err: unknown): boolean {
   return (status >= 500 && status < 600) || ["ECONNRESET", "ETIMEDOUT", "EAI_AGAIN"].includes(String(e.code));
 }
 
+// Custom thumbnails need a verified channel (phone verification in YouTube Studio); costs 50 quota units.
+export async function setThumbnail(videoId: string, imagePath: string, client?: youtube_v3.Youtube): Promise<void> {
+  const yt = client ?? youtubeClient();
+  try {
+    await yt.thumbnails.set({ videoId, media: { mimeType: "image/jpeg", body: createReadStream(imagePath) } });
+  } catch (err) {
+    const reason = (err as ApiError).errors?.[0]?.reason;
+    if (reason === "forbidden" || /verif/i.test((err as Error).message)) {
+      throw new Error("YouTube refused the custom thumbnail. Verify the channel at youtube.com/verify to allow them.");
+    }
+    throw explainYouTubeError(err);
+  }
+}
+
 export type UploadResult = { videoId: string; url: string; privacyStatus: string; publishAt?: string };
 
 export async function uploadToYouTube(

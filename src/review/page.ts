@@ -49,6 +49,8 @@ nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; } nav a { 
 table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 180px; } tr:last-child td { border-bottom: 0; } th { color: var(--muted); font-weight: 600; font-size: 13px; }
 td a { color: var(--accent); }
+.thumb { width: 100%; max-width: 320px; aspect-ratio: 16/9; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
+.card.long video { aspect-ratio: 16/9; }
 .reply { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; display: grid; gap: 8px; min-width: 0; }
 .reply blockquote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 6px 6px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
 .reply .actions { display: flex; gap: 8px; margin: 0; } .reply a { color: var(--accent); }
@@ -80,7 +82,7 @@ function postChips(posts: PostRow[] = []): string {
 function reviewCard(v: VideoRow, now: Date): string {
   const overdue = v.publish_at && v.publish_at < now;
   const tags = (v.hashtags.length ? v.hashtags : (v.script?.hashtags ?? [])).join(" ");
-  return `<article class="card review" id="v-${esc(v.id)}">
+  return `<article class="card review${v.format === "long" ? " long" : ""}" id="v-${esc(v.id)}">
   <video src="/videos/${esc(v.id)}/file" controls preload="metadata" playsinline></video>
   <form method="post" action="/videos/${esc(v.id)}/approve" class="fields">
     <p class="meta"><span class="status needs">Needs review</span> ${overdue ? `<span class="status bad">Slot passed; posts as soon as approved</span>` : `Posts ${esc(fmt(v.publish_at))}`}</p>
@@ -92,7 +94,8 @@ function reviewCard(v: VideoRow, now: Date): string {
     <input id="h-${esc(v.id)}" name="hashtags" value="${esc(tags)}">
     <label for="p-${esc(v.id)}">Post at <span class="hint">UTC</span></label>
     <input id="p-${esc(v.id)}" name="publish_at" type="datetime-local" value="${esc(toInputUtc(v.publish_at))}">
-    <p class="meta">Platforms: ${esc(v.platforms.join(", "))}</p>
+    ${v.format === "long" ? `<label>Thumbnail</label><img class="thumb" src="/videos/${esc(v.id)}/thumbnail" alt="Thumbnail for ${esc(v.title ?? v.topic)}">` : ""}
+    <p class="meta">Platforms: ${esc(v.platforms.join(", "))}${v.hook_style ? ` · hook test: ${esc(v.hook_style)}` : ""}</p>
     <div class="actions">
       <button type="submit" class="primary">Approve</button>
     </div>
@@ -208,6 +211,16 @@ ${
 <tbody>${r.videos.map((v) => `<tr><td>${esc(v.title)}</td>${shown.map((p) => cell(v, p)).join("")}<td>${int(v.views)}</td><td>${usd(v.costUsd)}</td></tr>`).join("")}</tbody>
 </table></div>`
     : `<ul><li><p class="empty">Nothing posted in the last 7 days.</p></li></ul>`
+}
+${
+  r.hookStyles.length
+    ? `<h2>Hook styles</h2>
+<p class="lede">Last 90 days. The agent keeps testing every style and mostly uses the one with the most views.</p>
+<div class="table-wrap"><table>
+<thead><tr><th scope="col">Hook style</th><th scope="col">Videos</th><th scope="col">Avg views</th></tr></thead>
+<tbody>${r.hookStyles.map((h) => `<tr><td>${esc(h.style)}</td><td>${int(h.videos)}</td><td>${int(h.avgViews)}</td></tr>`).join("")}</tbody>
+</table></div>`
+    : ""
 }
 <h2>Coming up</h2>
 <ul>${r.upcoming.length ? r.upcoming.map((u) => `<li class="row"><div class="row-main"><span class="status s-${esc(u.status)}">${esc(STATUS_LABEL[u.status] ?? u.status)}</span><strong>${esc(u.title)}</strong><span class="when">${esc(fmt(u.publishAt))}</span></div></li>`).join("") : `<li><p class="empty">Nothing planned.</p></li>`}</ul>

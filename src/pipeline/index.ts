@@ -6,7 +6,10 @@ import { createVideo, dbConfigured, updateVideo } from "../lib/db.js";
 import { probeDuration } from "../lib/ffmpeg.js";
 import { storageConfigured, uploadFile, videoKey } from "../lib/storage.js";
 import { buildAss, timeScenes, type VideoFormat } from "./captions.js";
+import type { HookStyle } from "./hooks.js";
+import { clipPrompt, generateClip, generatedClipsEnabled } from "./generated.js";
 import { renderVideo } from "./render.js";
+import { makeThumbnail } from "./thumbnail.js";
 import { generateScript, normalizeScript, sampleScript, translateScript, type VideoScript } from "./script.js";
 import { fetchVisual } from "./visuals.js";
 import { synthesizeVoice } from "./voice.js";
@@ -22,6 +25,7 @@ export type MakeVideoOptions = {
   upload?: boolean;
   format?: VideoFormat; // default VIDEO_FORMAT
   language?: string; // default VIDEO_LANGUAGE
+  hookStyle?: HookStyle;
   // A finished run folder to translate into `language`, reusing its footage.
   translateFrom?: string;
   log?: (msg: string) => void;
@@ -72,11 +76,11 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
     } else {
       log("Writing script…");
       if (opts.offline) script = sampleScript(opts.topic);
-      else ({ script, costUsd } = await generateScript(opts.topic, opts.angle, { format, language }));
+      else ({ script, costUsd } = await generateScript(opts.topic, opts.angle, { format, language, hookStyle: opts.hookStyle }));
     }
     await writeFile(join(dir, "script.json"), JSON.stringify(script, null, 2));
     if (videoId) {
-      await updateVideo(videoId, { status: "rendering", script, title: script.title, description: script.description, hashtags: script.hashtags, format, language });
+      await updateVideo(videoId, { status: "rendering", script, title: script.title, description: script.description, hashtags: script.hashtags, format, language, hook_style: source ? undefined : opts.hookStyle });
     }
 
     log(`Recording voice-over for ${script.scenes.length} scenes…`);
@@ -96,7 +100,15 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
       const visual = join(dir, `visual-${i}.mp4`);
       const reuse = opts.translateFrom && join(opts.translateFrom, `visual-${i}.mp4`);
       if (reuse && existsSync(reuse)) await copyFile(reuse, visual);
-      else await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, format });
+      else if (i === 0 && !opts.offline && generatedClipsEnabled()) {
+        log("Generating the opening clip…");
+        try {
+          costUsd += await generateClip(clipPrompt(scene.visual_query, scene.narration), visual, format);
+        } catch (err) {
+          log(`Generated clip failed (${(err as Error).message}); using stock footage instead.`);
+          await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, format });
+        }
+      } else await fetchVisual(scene.visual_query, visual, durations[i], { offline: opts.offline, sceneIndex: i, usedIds, format });
       visuals.push(visual);
     }
 
@@ -106,6 +118,12 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
     const videoPath = join(dir, "video.mp4");
     await renderVideo({ visuals, voices, durations, assPath, outPath: videoPath, musicPath: opts.musicPath, format });
     const durationSec = await probeDuration(videoPath);
+
+    if (format === "long") {
+      log("Making thumbnail…");
+      const text = script.scenes[0].on_screen_text || script.title.split(/\s+/).slice(0, 5).join(" ");
+      await makeThumbnail({ visualPath: visuals[0], text, assPath: join(dir, "thumbnail.ass"), outPath: join(dir, "thumbnail.jpg"), font: config.CAPTION_FONT });
+    }
 
     let url: string | undefined;
     let storageKey: string | undefined;

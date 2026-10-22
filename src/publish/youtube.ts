@@ -1,8 +1,9 @@
+import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { youtube_v3 } from "googleapis";
 import { dbConfigured, upsertPost } from "../lib/db.js";
-import { buildYouTubeMetadata, uploadToYouTube, type Privacy, type UploadResult } from "../lib/youtube.js";
+import { buildYouTubeMetadata, setThumbnail, uploadToYouTube, type Privacy, type UploadResult } from "../lib/youtube.js";
 import type { RenderedRun } from "./run-dir.js";
 
 export type PostToYouTubeOptions = {
@@ -51,6 +52,14 @@ export async function postToYouTube(run: RenderedRun, opts: PostToYouTubeOptions
         scheduled_for: upload.publishAt ? new Date(upload.publishAt) : undefined,
         published_at: upload.publishAt ? undefined : new Date(),
       });
+    }
+    const thumb = join(run.dir, "thumbnail.jpg");
+    if (run.format === "long" && existsSync(thumb)) {
+      // The video is already up; a missing thumbnail shouldn't fail the post.
+      await setThumbnail(upload.videoId, thumb, opts.client).then(
+        () => log("Thumbnail set."),
+        (err) => log(`Thumbnail not set: ${(err as Error).message}`),
+      );
     }
     await writeFile(join(run.dir, "youtube.json"), JSON.stringify(upload, null, 2));
     return { metadata, upload };

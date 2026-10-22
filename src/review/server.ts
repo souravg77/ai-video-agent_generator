@@ -8,6 +8,7 @@ import { buildReport } from "../analytics/report.js";
 import { ignoreComment, pendingReplies, sendReply } from "../comments/index.js";
 import { realPlatforms, type CommentPlatforms } from "../comments/platforms.js";
 import { renderPage, renderReportPage } from "./page.js";
+import { renderPrivacyPage } from "./privacy.js";
 
 export type ReviewServerOptions = { port: number; password?: string; host?: string; commentPlatforms?: CommentPlatforms };
 
@@ -78,6 +79,12 @@ export function parseUtcInput(s: string | null): Date | undefined {
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, opts: ReviewServerOptions) {
+  // Public, for health checks and for the Google/Meta reviewers.
+  if (req.method === "GET" && req.url === "/health") return void res.end("ok");
+  if (req.method === "GET" && (req.url === "/privacy" || req.url === "/data-deletion")) {
+    res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+    return void res.end(renderPrivacyPage(req.url === "/privacy" ? "privacy" : "data-deletion"));
+  }
   if (!authorized(req, opts.password)) {
     return void res.writeHead(401, { "www-authenticate": 'Basic realm="Video review"' }).end("Sign in required");
   }
@@ -95,7 +102,6 @@ async function handle(req: IncomingMessage, res: ServerResponse, opts: ReviewSer
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     return void res.end(renderPage({ review, upcoming, recent, posts, replies, now, flash: url.searchParams.get("flash") ?? undefined }));
   }
-  if (req.method === "GET" && url.pathname === "/health") return void res.end("ok");
   if (req.method === "GET" && url.pathname === "/report") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
     return void res.end(renderReportPage(await buildReport(new Date())));
@@ -111,11 +117,18 @@ async function handle(req: IncomingMessage, res: ServerResponse, opts: ReviewSer
     return redirect(res, r.message);
   }
 
-  const m = /^\/videos\/([^/]+)\/(file|approve|reject|retry)$/.exec(url.pathname);
+  const m = /^\/videos\/([^/]+)\/(file|thumbnail|approve|reject|retry)$/.exec(url.pathname);
   if (!m || !UUID.test(m[1])) return void res.writeHead(404).end("Not found");
   const [, id, action] = m;
 
   if (action === "file" && req.method === "GET") return sendVideo(req, res, id);
+  if (action === "thumbnail" && req.method === "GET") {
+    const v = await store.getVideo(id);
+    const file = v?.local_dir ? join(v.local_dir, "thumbnail.jpg") : undefined;
+    if (!file || !(await stat(file).catch(() => undefined))) return void res.writeHead(404).end("No thumbnail");
+    res.writeHead(200, { "content-type": "image/jpeg" });
+    return void createReadStream(file).pipe(res);
+  }
   if (req.method !== "POST") return void res.writeHead(405).end();
   if (!sameOrigin(req)) return void res.writeHead(403).end("Cross-site request blocked");
 

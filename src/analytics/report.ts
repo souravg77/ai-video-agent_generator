@@ -1,4 +1,5 @@
 import { BRAND } from "../config.js";
+import { hookStyleStats } from "../agent/store.js";
 import { db, type Platform } from "../lib/db.js";
 
 export type PlatformNumbers = { views: number; likes: number; comments: number; watchTimeSec: number; url: string | null };
@@ -20,6 +21,7 @@ export type Report = {
   totals: { videos: number; views: number; likes: number; comments: number; watchTimeSec: number; costUsd: number; costPer1kViews: number | null };
   rejected: { count: number; costUsd: number };
   upcoming: { title: string; publishAt: Date | null; status: string }[];
+  hookStyles: { style: string; videos: number; avgViews: number }[]; // last 90 days
 };
 
 type Row = {
@@ -100,6 +102,7 @@ export async function buildReport(now: Date, days = 7): Promise<Report> {
     },
     rejected: { count: Number(rejected.rows[0].count), costUsd: n(rejected.rows[0].cost) },
     upcoming: upcoming.rows.map((r) => ({ title: r.title, publishAt: r.publish_at, status: r.status })),
+    hookStyles: await hookStyleStats(now),
   };
 }
 
@@ -125,6 +128,9 @@ export function reportText(r: Report): string {
   if (r.videos.length > 3) {
     lines.push("Weakest:");
     for (const v of r.videos.slice(-Math.min(3, r.videos.length - 3)).reverse()) lines.push(`• ${v.title}: ${int(v.views)} views`);
+  }
+  if (r.hookStyles.length) {
+    lines.push("", `Hook styles (90 days, avg views): ${r.hookStyles.map((h) => `${h.style} ${int(h.avgViews)} (${h.videos})`).join(" · ")}`);
   }
   lines.push("", r.upcoming.length ? `Next up: ${r.upcoming.slice(0, 3).map((u) => u.title).join("; ")}` : "Nothing planned yet.");
   return lines.join("\n");

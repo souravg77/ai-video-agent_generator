@@ -23,7 +23,9 @@ if (!dbConfigured()) {
 
 const deps = defaultDeps({ offline: values.offline });
 if (!deps.planner) console.log("AGENT_NICHE is not set, so the agent won't plan ideas. Add ideas with `npm run agent:add`.");
-console.log(`Posting slots (UTC): ${deps.settings.postTimesUtc} · platforms: ${deps.settings.platforms.join(", ")} · ${deps.settings.autoApprove ? "auto-approve ON" : "approval required"}`);
+console.log(`Posting slots (UTC): ${deps.settings.postTimesUtc} · platforms: ${deps.settings.platforms.join(", ")} · ${
+    deps.settings.autoApprove ? `auto-approve ON after ${deps.settings.autoApproveAfter ?? 0} approved posts` : "approval required"
+  }${deps.settings.monthlyBudgetUsd != null ? ` · budget $${deps.settings.monthlyBudgetUsd}/month` : ""}`);
 
 async function runOnce() {
   const r = await tick(deps);
@@ -42,7 +44,12 @@ if (values.once) {
   }
 } else {
   if (!values["no-review"]) {
-    await startReviewServer({ port: config.REVIEW_PORT, password: config.REVIEW_PASSWORD });
+    const local = !config.REVIEW_HOST || ["127.0.0.1", "localhost", "::1"].includes(config.REVIEW_HOST);
+    if (!local && !config.REVIEW_PASSWORD) {
+      console.error(`REVIEW_HOST is ${config.REVIEW_HOST}, so the review page would be reachable from other machines. Set REVIEW_PASSWORD first.`);
+      process.exit(1);
+    }
+    await startReviewServer({ port: config.REVIEW_PORT, password: config.REVIEW_PASSWORD, host: config.REVIEW_HOST });
     console.log(`Review page: http://localhost:${config.REVIEW_PORT}${config.REVIEW_PASSWORD ? " (password protected)" : " (this computer only; set REVIEW_PASSWORD to open it to your network)"}`);
   }
   let running = false;
