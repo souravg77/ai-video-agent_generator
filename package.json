@@ -20,8 +20,10 @@
     "post": "tsx scripts/post.ts",
     "agent": "tsx scripts/agent.ts",
     "agent:add": "tsx scripts/agent-add.ts",
+    "agents": "tsx scripts/agents.ts",
     "stats": "tsx scripts/stats.ts",
-    "report": "tsx scripts/report.ts"
+    "report": "tsx scripts/report.ts",
+    "comments": "tsx scripts/comments.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",

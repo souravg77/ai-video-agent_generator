@@ -1,11 +1,15 @@
 import { config } from "../config.js";
 import type { Platform } from "../lib/db.js";
+import type { VideoFormat } from "../pipeline/captions.js";
 import { makeVideo } from "../pipeline/index.js";
 import { normalizeScript } from "../pipeline/script.js";
 import { parsePlatforms, publish, type PlatformResult } from "../publish/index.js";
 import type { RenderedRun } from "../publish/run-dir.js";
 import { collectStats, defaultFetchers, type CollectResult } from "../analytics/collect.js";
 import { buildReport, reportText } from "../analytics/report.js";
+import { checkComments, type CheckResult } from "../comments/index.js";
+import { claudeDrafter } from "../comments/drafts.js";
+import { realPlatforms } from "../comments/platforms.js";
 import { alert, sendWebhook } from "./alerts.js";
 import { claudePlanner, type Planner } from "./planner.js";
 import { freeSlots, upcomingSlots } from "./slots.js";
@@ -17,6 +21,7 @@ export type AgentSettings = {
   renderLeadHours: number;
   autoApprove: boolean;
   platforms: Platform[];
+  format?: VideoFormat; // default short
   statsHours?: number; // default 6
   reportWeekday?: number; // 0 = Sunday; default 1 (Monday)
 };
@@ -32,9 +37,10 @@ export type AgentDeps = {
     collect: (now: Date) => Promise<CollectResult>;
     report: (now: Date) => Promise<void>;
   };
+  comments?: { check: (now: Date) => Promise<CheckResult> }; // set when AGENT_COMMENT_REPLIES=true
 };
 
-export type TickReport = { planned: number; rendered: string[]; posted: string[]; failed: string[]; released: number; statsSaved?: number; reportSent?: boolean };
+export type TickReport = { planned: number; rendered: string[]; posted: string[]; failed: string[]; released: number; statsSaved?: number; reportSent?: boolean; replyDrafts?: number };
 
 const STUCK_AFTER_MS = 60 * 60_000;
 
@@ -45,6 +51,7 @@ export function settingsFromEnv(): AgentSettings {
     renderLeadHours: config.AGENT_RENDER_LEAD_HOURS,
     autoApprove: config.AGENT_AUTO_APPROVE,
     platforms: parsePlatforms(config.AGENT_PLATFORMS),
+    format: config.VIDEO_FORMAT,
     statsHours: config.AGENT_STATS_HOURS,
     reportWeekday: config.AGENT_REPORT_WEEKDAY,
   };
@@ -56,9 +63,9 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
     Array.from({ length: count }, (_, i) => ({ topic: `sample idea ${Date.now().toString(36)}-${i + 1}`, angle: "Offline placeholder idea" }));
   return {
     settings: settingsFromEnv(),
-    planner: opts.offline ? offlinePlanner : config.AGENT_NICHE ? claudePlanner(config.AGENT_NICHE) : undefined,
+    planner: opts.offline ? offlinePlanner : config.AGENT_NICHE ? claudePlanner(config.AGENT_NICHE, { format: config.VIDEO_FORMAT, language: config.VIDEO_LANGUAGE }) : undefined,
     render: async (v) => {
-      await makeVideo({ topic: v.topic, angle: v.angle ?? undefined, videoId: v.id, offline: opts.offline, log: () => {} });
+      await makeVideo({ topic: v.topic, angle: v.angle ?? undefined, videoId: v.id, format: v.format, offline: opts.offline, log: () => {} });
     },
     publish: (run, platforms) => publish(run, platforms, { privacy: "public" }),
     alert,
@@ -72,6 +79,8 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
             if (!(await sendWebhook(text))) log(`Weekly report (set ALERT_WEBHOOK_URL to receive it):\n${text}`);
           },
         },
+    comments:
+      config.AGENT_COMMENT_REPLIES && !opts.offline ? { check: (now) => checkComments(now, realPlatforms, claudeDrafter()) } : undefined,
   };
 }
 
@@ -84,7 +93,7 @@ export function runFromRow(v: store.VideoRow): RenderedRun {
     description: v.description ?? v.script.description,
     hashtags: v.hashtags.length ? v.hashtags : v.script.hashtags,
   });
-  return { dir: v.local_dir, videoPath: `${v.local_dir}/video.mp4`, script, videoId: v.id, url: v.public_url ?? undefined };
+  return { dir: v.local_dir, videoPath: `${v.local_dir}/video.mp4`, script, videoId: v.id, url: v.public_url ?? undefined, format: v.format };
 }
 
 export async function planAhead(deps: AgentDeps, now: Date): Promise<number> {
@@ -92,7 +101,7 @@ export async function planAhead(deps: AgentDeps, now: Date): Promise<number> {
   const slots = freeSlots(upcomingSlots(now, deps.settings.planDays, deps.settings.postTimesUtc), await store.takenSlots(now));
   if (slots.length === 0) return 0;
   const ideas = await deps.planner(slots.length, await store.pastVideos());
-  const planned = ideas.slice(0, slots.length).map((idea, i) => ({ ...idea, publishAt: slots[i], platforms: deps.settings.platforms }));
+  const planned = ideas.slice(0, slots.length).map((idea, i) => ({ ...idea, publishAt: slots[i], platforms: deps.settings.platforms, format: deps.settings.format }));
   await store.insertIdeas(planned);
   return planned.length;
 }
@@ -145,24 +154,36 @@ async function postOne(deps: AgentDeps, video: store.VideoRow): Promise<"posted"
   return "failed";
 }
 
-// Snapshots stats every few hours and sends the weekly report once on its day, after 09:00 UTC.
+// Snapshots stats (and checks comments) every few hours and sends the weekly report once on its day, after 09:00 UTC.
 async function analyticsStep(deps: AgentDeps, now: Date, report: TickReport): Promise<void> {
-  if (!deps.analytics) return;
+  if (!deps.analytics && !deps.comments) return;
   const last = await store.getState("stats_collected_at");
   if (!last || now.getTime() - new Date(last).getTime() >= (deps.settings.statsHours ?? 6) * 3600_000) {
     await store.setState("stats_collected_at", now.toISOString()); // set first so a failing platform isn't hammered every tick
-    try {
-      const r = await deps.analytics.collect(now);
-      report.statsSaved = r.saved;
-      for (const e of r.errors) deps.log(`Stats: ${e}`);
-      if (r.errors.length && r.saved === 0) await deps.alert(`Couldn't fetch any stats: ${r.errors[0]}`);
-    } catch (err) {
-      await deps.alert(`Collecting stats failed: ${(err as Error).message}`);
+    if (deps.analytics) {
+      try {
+        const r = await deps.analytics.collect(now);
+        report.statsSaved = r.saved;
+        for (const e of r.errors) deps.log(`Stats: ${e}`);
+        if (r.errors.length && r.saved === 0) await deps.alert(`Couldn't fetch any stats: ${r.errors[0]}`);
+      } catch (err) {
+        await deps.alert(`Collecting stats failed: ${(err as Error).message}`);
+      }
+    }
+    if (deps.comments) {
+      try {
+        const c = await deps.comments.check(now);
+        report.replyDrafts = c.drafted;
+        for (const e of c.errors) deps.log(`Comments: ${e}`);
+        if (c.drafted) await deps.alert(`${c.drafted} reply draft(s) to new comments are waiting on the review page.`);
+      } catch (err) {
+        await deps.alert(`Checking comments failed: ${(err as Error).message}`);
+      }
     }
   }
 
   const today = now.toISOString().slice(0, 10);
-  if (now.getUTCDay() === (deps.settings.reportWeekday ?? 1) && now.getUTCHours() >= 9 && (await store.getState("report_sent_on")) !== today) {
+  if (deps.analytics && now.getUTCDay() === (deps.settings.reportWeekday ?? 1) && now.getUTCHours() >= 9 && (await store.getState("report_sent_on")) !== today) {
     await store.setState("report_sent_on", today);
     try {
       await deps.analytics.report(now);

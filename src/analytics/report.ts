@@ -1,3 +1,4 @@
+import { BRAND } from "../config.js";
 import { db, type Platform } from "../lib/db.js";
 
 export type PlatformNumbers = { views: number; likes: number; comments: number; watchTimeSec: number; url: string | null };
@@ -111,7 +112,7 @@ export const hours = (sec: number) => (sec >= 3600 ? `${(sec / 3600).toFixed(1)}
 export function reportText(r: Report): string {
   const t = r.totals;
   const lines = [
-    `**Weekly video report** (${day(r.from)} to ${day(r.to)})`,
+    `**Weekly video report${BRAND ? `: ${BRAND}` : ""}** (${day(r.from)} to ${day(r.to)})`,
     `${t.videos} video(s) posted · ${int(t.views)} views · ${int(t.likes)} likes · ${int(t.comments)} comments${t.watchTimeSec ? ` · ${hours(t.watchTimeSec)} watched` : ""}`,
     `Spend ${usd(t.costUsd)}${t.costPer1kViews != null ? ` · ${usd(t.costPer1kViews)} per 1,000 views` : ""}${r.rejected.count ? ` · ${r.rejected.count} rejected (${usd(r.rejected.costUsd)})` : ""}`,
   ];

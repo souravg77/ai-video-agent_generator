@@ -1,4 +1,4 @@
-import { HEIGHT, WIDTH } from "./captions.js";
+import { FRAME, type VideoFormat } from "./captions.js";
 import { ffmpeg } from "../lib/ffmpeg.js";
 
 export type RenderInput = {
@@ -9,6 +9,7 @@ export type RenderInput = {
   outPath: string;
   musicPath?: string;
   musicVolume?: number;
+  format?: VideoFormat;
 };
 
 // Escapes a path for use inside an FFmpeg filter argument.
@@ -17,6 +18,7 @@ const filterPath = (p: string) => p.replace(/\\/g, "/").replace(/:/g, "\\:").rep
 export function buildRenderArgs(input: RenderInput): string[] {
   const { visuals, voices, durations } = input;
   const n = visuals.length;
+  const { width: W, height: H } = FRAME[input.format ?? "short"];
   if (voices.length !== n || durations.length !== n) throw new Error("visuals, voices and durations must have the same length");
 
   const args: string[] = [];
@@ -28,7 +30,7 @@ export function buildRenderArgs(input: RenderInput): string[] {
   for (let i = 0; i < n; i++) {
     const d = durations[i].toFixed(3);
     parts.push(
-      `[${i}:v]scale=${WIDTH}:${HEIGHT}:force_original_aspect_ratio=increase,crop=${WIDTH}:${HEIGHT},fps=30,setsar=1,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`,
+      `[${i}:v]scale=${W}:${H}:force_original_aspect_ratio=increase,crop=${W}:${H},fps=30,setsar=1,trim=duration=${d},setpts=PTS-STARTPTS[v${i}]`,
       `[${n + i}:a]aresample=44100,aformat=channel_layouts=stereo,apad,atrim=duration=${d},asetpts=PTS-STARTPTS[a${i}]`,
     );
   }

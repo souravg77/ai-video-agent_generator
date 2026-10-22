@@ -67,3 +67,27 @@ CREATE TABLE IF NOT EXISTS agent_state (
   value      text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Phase 6: long-form videos and languages.
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS format text NOT NULL DEFAULT 'short';
+ALTER TABLE videos ADD COLUMN IF NOT EXISTS language text;
+
+-- Phase 6: comments on our posts, with Claude's draft replies waiting for approval.
+CREATE TABLE IF NOT EXISTS comments (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  post_id       uuid NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  external_id   text NOT NULL,      -- the platform's comment id; replies go to it
+  author        text,
+  text          text NOT NULL,
+  commented_at  timestamptz,
+  status        text NOT NULL DEFAULT 'new'
+                CHECK (status IN ('new', 'drafted', 'skipped', 'sent', 'ignored', 'failed')),
+  draft         text,
+  reply_external_id text,
+  error         text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (post_id, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS comments_status_idx ON comments (status);

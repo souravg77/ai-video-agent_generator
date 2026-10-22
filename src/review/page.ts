@@ -1,5 +1,6 @@
 import type { PostRow, VideoRow } from "../agent/store.js";
 import { hours, type Report } from "../analytics/report.js";
+import type { CommentRow } from "../comments/index.js";
 
 export const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -48,6 +49,9 @@ nav { display: flex; gap: 16px; margin-bottom: 16px; font-size: 14px; } nav a { 
 table { width: 100%; border-collapse: collapse; font-size: 14px; } th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 th:first-child, td:first-child { text-align: left; white-space: normal; min-width: 180px; } tr:last-child td { border-bottom: 0; } th { color: var(--muted); font-weight: 600; font-size: 13px; }
 td a { color: var(--accent); }
+.reply { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 12px; display: grid; gap: 8px; min-width: 0; }
+.reply blockquote { margin: 0; padding: 8px 12px; border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 6px 6px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.reply .actions { display: flex; gap: 8px; margin: 0; } .reply a { color: var(--accent); }
 `;
 
 const STATUS_LABEL: Record<string, string> = {
@@ -100,6 +104,21 @@ function reviewCard(v: VideoRow, now: Date): string {
 </article>`;
 }
 
+function replyCard(c: CommentRow): string {
+  return `<article class="reply">
+  <p class="meta"><strong>${esc(c.author ?? "Someone")}</strong> on ${esc(c.platform)} · ${c.post_url ? `<a href="${esc(c.post_url)}" target="_blank" rel="noopener">${esc(c.video_title)}</a>` : esc(c.video_title)}${c.status === "failed" ? ` · <span class="err">last try failed: ${esc(c.error)}</span>` : ""}</p>
+  <blockquote>${esc(c.text)}</blockquote>
+  <form method="post" action="/comments/${esc(c.id)}/send" class="fields">
+    <label for="c-${esc(c.id)}">Reply <span class="hint">edit before sending; posts publicly as your account</span></label>
+    <textarea id="c-${esc(c.id)}" name="reply" rows="3" maxlength="1000">${esc(c.draft)}</textarea>
+    <div class="actions">
+      <button type="submit" class="primary">Send reply</button>
+      <button type="submit" formaction="/comments/${esc(c.id)}/ignore">Ignore</button>
+    </div>
+  </form>
+</article>`;
+}
+
 function row(v: VideoRow, posts?: PostRow[]): string {
   const action =
     v.status === "failed"
@@ -125,10 +144,12 @@ export function renderPage(data: {
   upcoming: VideoRow[];
   recent: VideoRow[];
   posts: Map<string, PostRow[]>;
+  replies?: CommentRow[];
   now: Date;
   flash?: string;
 }): string {
   const { review, upcoming, recent, posts, now } = data;
+  const replies = data.replies ?? [];
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Video Review Queue</title>
@@ -136,10 +157,11 @@ export function renderPage(data: {
 <body><main>
 <nav><a href="/">Review queue</a><a href="/report">Weekly report</a></nav>
 <h1>Video review queue</h1>
-<p class="lede">${review.length} waiting for review · ${upcoming.length} coming up · times in UTC</p>
+<p class="lede">${review.length} waiting for review${replies.length ? ` · ${replies.length} comment repl${replies.length === 1 ? "y" : "ies"} to approve` : ""} · ${upcoming.length} coming up · times in UTC</p>
 ${data.flash ? `<p class="flash" role="status">${esc(data.flash)}</p>` : ""}
 <h2>Needs review</h2>
 ${review.length ? review.map((v) => reviewCard(v, now)).join("\n") : `<ul><li><p class="empty">Nothing to review. New videos appear here once the agent makes them.</p></li></ul>`}
+${replies.length ? `<h2>Comment replies</h2>\n${replies.map(replyCard).join("\n")}` : ""}
 <h2>Coming up</h2>
 <ul>${upcoming.length ? upcoming.map((v) => row(v, posts.get(v.id))).join("") : `<li><p class="empty">No planned videos. Set AGENT_NICHE so the agent plans ideas, or add one with npm run agent:add.</p></li>`}</ul>
 <h2>Recent</h2>

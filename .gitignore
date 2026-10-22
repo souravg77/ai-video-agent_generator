@@ -3,3 +3,5 @@ dist/
 .env
 .tokens/
 out/
+brands/*.env
+!brands/example.env

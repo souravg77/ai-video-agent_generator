@@ -7,9 +7,14 @@ export function dbConfigured(): boolean {
   return Boolean(config.DATABASE_URL);
 }
 
+// Each brand keeps its tables in its own schema; public stays on the path for built-ins.
+export function connectionConfig(): pg.ClientConfig {
+  return { connectionString: config.DATABASE_URL, options: config.DB_SCHEMA ? `-c search_path=${config.DB_SCHEMA},public` : undefined };
+}
+
 export function db(): pg.Pool {
   if (!config.DATABASE_URL) throw new Error("DATABASE_URL is not set.");
-  pool ??= new pg.Pool({ connectionString: config.DATABASE_URL });
+  pool ??= new pg.Pool(connectionConfig());
   return pool;
 }
 
@@ -30,9 +35,11 @@ type VideoUpdate = Partial<{
   local_dir: string;
   public_url: string;
   cost_usd: number;
+  format: string;
+  language: string;
 }>;
 
-const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error", "local_dir", "public_url", "cost_usd"]);
+const COLUMNS = new Set(["status", "script", "title", "description", "hashtags", "storage_key", "duration_sec", "error", "local_dir", "public_url", "cost_usd", "format", "language"]);
 
 export async function updateVideo(id: string, fields: VideoUpdate): Promise<void> {
   const entries = Object.entries(fields).filter(([k, v]) => COLUMNS.has(k) && v !== undefined);

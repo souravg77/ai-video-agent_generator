@@ -32,6 +32,10 @@ export async function publish(run: RenderedRun, platforms: Platform[], opts: Pub
   }
   const results: PlatformResult[] = [];
   for (const platform of platforms) {
+    if (run.format === "long" && platform !== "youtube") {
+      results.push({ platform, ok: false, error: `${platform} Reels must be vertical, so long 16:9 videos only go to YouTube.` });
+      continue;
+    }
     log(`Posting to ${platform}…`);
     try {
       let outcome: PostOutcome;

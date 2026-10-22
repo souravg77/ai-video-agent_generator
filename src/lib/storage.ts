@@ -1,7 +1,10 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import { config } from "../config.js";
+import { BRAND, config, envFile } from "../config.js";
+
+// Brands sharing a bucket each get their own folder.
+export const videoKey = (name: string) => `${BRAND ? `${BRAND}/` : ""}videos/${name}.mp4`;
 
 export function storageConfigured(): boolean {
   return Boolean(config.R2_ACCOUNT_ID && config.R2_ACCESS_KEY_ID && config.R2_SECRET_ACCESS_KEY && config.R2_BUCKET);
@@ -9,7 +12,7 @@ export function storageConfigured(): boolean {
 
 // Uploads a file to Cloudflare R2 and returns its public URL (or the key if no public base URL is set).
 export async function uploadFile(filePath: string, key: string, contentType: string): Promise<string> {
-  if (!storageConfigured()) throw new Error("R2 storage is not configured in .env.");
+  if (!storageConfigured()) throw new Error(`R2 storage is not configured in ${envFile}.`);
   const client = new S3Client({
     region: "auto",
     endpoint: `https://${config.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,

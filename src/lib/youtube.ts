@@ -14,6 +14,8 @@ export type YouTubeMetadataInput = {
   // Set when the video contains realistic AI-generated or altered footage (YouTube's disclosure rule).
   containsSyntheticMedia?: boolean;
   categoryId?: string;
+  // Long (16:9) videos don't get the #Shorts tag
+  long?: boolean;
   now?: Date;
 };
 
@@ -54,7 +56,7 @@ export function buildYouTubeMetadata(input: YouTubeMetadataInput): youtube_v3.Sc
   }
 
   const hashtags = [...new Set(input.hashtags.map((h) => h.replace(/^#/, "").replace(/\s+/g, "")).filter(Boolean))];
-  if (!hashtags.some((h) => h.toLowerCase() === "shorts")) hashtags.unshift("Shorts");
+  if (!input.long && !hashtags.some((h) => h.toLowerCase() === "shorts")) hashtags.unshift("Shorts");
 
   const title = stripAngles(input.title).trim().slice(0, TITLE_MAX) || "Untitled";
   const hashtagLine = hashtags.map((h) => `#${h}`).join(" ");
@@ -116,7 +118,7 @@ export type UploadResult = { videoId: string; url: string; privacyStatus: string
 export async function uploadToYouTube(
   filePath: string,
   metadata: youtube_v3.Schema$Video,
-  opts: { client?: youtube_v3.Youtube; onProgress?: (fraction: number) => void; retries?: number } = {},
+  opts: { client?: youtube_v3.Youtube; onProgress?: (fraction: number) => void; retries?: number; long?: boolean } = {},
 ): Promise<UploadResult> {
   const yt = opts.client ?? youtubeClient();
   const { size } = await stat(filePath);
@@ -132,7 +134,7 @@ export async function uploadToYouTube(
       if (!id) throw new Error("YouTube accepted the upload but returned no video id.");
       return {
         videoId: id,
-        url: `https://youtube.com/shorts/${id}`,
+        url: opts.long ? `https://www.youtube.com/watch?v=${id}` : `https://youtube.com/shorts/${id}`,
         privacyStatus: res.data.status?.privacyStatus ?? "unknown",
         publishAt: res.data.status?.publishAt ?? undefined,
       };
