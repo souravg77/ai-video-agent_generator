@@ -5,6 +5,7 @@ import { existsSync, readdirSync } from "node:fs";
 import { google } from "googleapis";
 import pg from "pg";
 import { config, requirements } from "../src/config.js";
+import { parsePlatforms } from "../src/publish/index.js";
 import { graphGet } from "../src/lib/graph.js";
 
 type Result = { name: string; ok: boolean; detail: string };
@@ -17,6 +18,11 @@ const replaced = new Set<string>([
   ...(config.VISUALS_PROVIDER !== "pexels" ? ["Stock footage (Pexels)"] : []),
   ...(config.PUBLISH_MODE === "manual" ? ["Storage (R2)", "YouTube", "Facebook Page", "Instagram"] : []),
 ]);
+// Platforms you don't post to aren't needed either; R2 is only for Instagram.
+const platforms = parsePlatforms(config.AGENT_PLATFORMS);
+if (!platforms.includes("youtube")) replaced.add("YouTube");
+if (!platforms.includes("facebook")) replaced.add("Facebook Page");
+if (!platforms.includes("instagram")) ["Instagram", "Storage (R2)"].forEach((n) => replaced.add(n));
 
 console.log(`Mode: writing ${config.LLM_PROVIDER}, voice ${config.TTS_PROVIDER}, footage ${config.VISUALS_PROVIDER}, posting ${config.PUBLISH_MODE}\n`);
 
@@ -92,5 +98,6 @@ if (config.VISUALS_PROVIDER === "folder") {
 
 if (config.PUBLISH_MODE === "manual") results.push({ name: "Posting", ok: true, detail: `manual: videos are exported to ${config.OUT_DIR}/ready/ for you to upload` });
 
-for (const r of results) console.log(`${r.ok ? "✓" : "✗"} ${r.name.padEnd(14)} ${r.detail}`);
-process.exitCode = results.every((r) => r.ok) ? 0 : 1;
+const optional = (r: Result) => r.name.includes("(optional)");
+for (const r of results) console.log(`${r.ok ? "✓" : optional(r) ? "·" : "✗"} ${r.name.padEnd(14)} ${r.detail}`);
+process.exitCode = results.every((r) => r.ok || optional(r)) ? 0 : 1;

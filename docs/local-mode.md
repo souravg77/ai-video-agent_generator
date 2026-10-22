@@ -47,6 +47,8 @@ Stats, the weekly report's view counts, and comment replies need the platform AP
 
 ## Choosing pieces separately
 
+The easiest way is `npm run setup`, which asks for each step. By hand:
+
 Each step has its own setting, which overrides `AGENT_MODE`. For example, to keep Claude for writing but go free everywhere else:
 
 ```sh

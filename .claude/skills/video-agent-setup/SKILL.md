@@ -28,8 +28,10 @@ Never automate posting through a browser or unofficial tools. It breaks the plat
 
 ```sh
 npm install
-cp .env.example .env       # only if .env doesn't exist; never overwrite it
+npm run setup              # interactive: local tool or API per step, keys (hidden), YouTube/Meta sign-ins, then npm run check
 ```
+
+`npm run setup` needs a real terminal, so ask the user to run it themselves. When working without a terminal, write the same settings to `.env` instead, starting from a copy of `.env.example` and never overwriting an existing `.env`. Rerunning setup switches any step between local and an API.
 
 FFmpeg must be installed (`ffmpeg -version`).
 

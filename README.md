@@ -16,9 +16,18 @@ No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`.
 
 ```sh
 npm install
-cp .env.example .env
+npm run setup          # for each step, pick a free local tool or connect an API; enters keys and signs you in
 npm run check          # shows what's configured and tests each credential
 ```
+
+| Step | Connect an API | Or run locally, free |
+| --- | --- | --- |
+| Writing | Claude | Ollama |
+| Voice | ElevenLabs | Piper |
+| Footage | Pexels | your own clips, or generated backgrounds |
+| Posting | YouTube, Facebook and Instagram APIs | export files and upload by hand |
+
+Run `npm run setup` again any time to switch a step. Or edit `.env` by hand (copy `.env.example`).
 
 Follow [docs/phase0-setup.md](docs/phase0-setup.md) to fill in `.env`. Making videos also needs [FFmpeg](https://ffmpeg.org/download.html) installed.
 
@@ -154,6 +163,7 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | `npm run post:youtube` | Uploads a finished video to YouTube (see above) |
 | `npm test` | Tests (set `TEST_DATABASE_URL` to an empty Postgres database to include the agent tests; its tables get emptied) |
 | `npm run check` | Lists missing settings and tests DB, YouTube, Facebook and Instagram access (or Ollama, Piper and footage in local mode) |
+| `npm run setup` | Guided setup: local tool or API for each step, keys, sign-ins, then the check |
 | `npm run local:setup` | Gets local mode ready: Ollama model, Piper and its voice, footage folder |
 | `npm run auth:youtube` | One-time Google sign-in; saves `YOUTUBE_REFRESH_TOKEN` |
 | `npm run auth:meta` | Exchanges a Graph API Explorer token for a long-lived Page token and finds the Instagram account |

@@ -176,3 +176,24 @@ test("manual publish of a long video only exports YouTube", async () => {
   assert.equal(slugify("¿Qué es? Ñandú & more!"), "que-es-nandu-more");
   assert.equal(slugify("タコのジャンプ"), "タコのジャンプ");
 });
+
+test("npm run setup: each step's choice maps to .env settings and only the keys it needs", async () => {
+  const { envForChoices, keysToAsk } = await import("../src/lib/setup-choices.js");
+  const local = { writing: "ollama", voice: "piper", footage: "generated", posting: "manual", platforms: ["youtube", "instagram"] } as const;
+  assert.deepEqual(envForChoices({ ...local, platforms: [...local.platforms] }), {
+    AGENT_MODE: "local",
+    LLM_PROVIDER: "ollama",
+    TTS_PROVIDER: "piper",
+    VISUALS_PROVIDER: "generated",
+    PUBLISH_MODE: "manual",
+    AGENT_PLATFORMS: "youtube,instagram",
+  });
+  assert.deepEqual(keysToAsk({ ...local, platforms: ["youtube"] }), []);
+
+  const mixed = { writing: "claude", voice: "piper", footage: "pexels", posting: "api", platforms: ["youtube"] } as const;
+  assert.equal(envForChoices({ ...mixed, platforms: ["youtube"] }).AGENT_MODE, "cloud");
+  assert.deepEqual(keysToAsk({ ...mixed, platforms: ["youtube"] }).map((k) => k.key), ["ANTHROPIC_API_KEY", "PEXELS_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET"]);
+  const ig = keysToAsk({ ...mixed, platforms: ["instagram"] }).map((k) => k.key);
+  assert.ok(ig.includes("META_SHORT_LIVED_USER_TOKEN") && ig.includes("R2_PUBLIC_BASE_URL") && !ig.includes("GOOGLE_CLIENT_ID"));
+  assert.ok(keysToAsk({ ...mixed, platforms: ["youtube"] }).find((k) => k.key === "ANTHROPIC_API_KEY")?.secret);
+});

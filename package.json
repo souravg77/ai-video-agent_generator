@@ -25,6 +25,7 @@
     "report": "tsx scripts/report.ts",
     "comments": "tsx scripts/comments.ts",
     "telegram:setup": "tsx scripts/telegram-setup.ts",
+    "setup": "tsx scripts/setup.ts",
     "local:setup": "tsx scripts/local-setup.ts"
   },
   "dependencies": {
