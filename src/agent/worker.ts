@@ -1,6 +1,9 @@
+import { rm } from "node:fs/promises";
+import { resolve, sep } from "node:path";
 import { config } from "../config.js";
 import type { Platform } from "../lib/db.js";
 import type { VideoFormat } from "../pipeline/captions.js";
+import { chooseHookStyle } from "../pipeline/hooks.js";
 import { makeVideo } from "../pipeline/index.js";
 import { normalizeScript } from "../pipeline/script.js";
 import { parsePlatforms, publish, type PlatformResult } from "../publish/index.js";
@@ -11,6 +14,7 @@ import { checkComments, type CheckResult } from "../comments/index.js";
 import { claudeDrafter } from "../comments/drafts.js";
 import { realPlatforms } from "../comments/platforms.js";
 import { alert, sendWebhook } from "./alerts.js";
+import { pollReviews, sendForReview, sendText, telegramConfigured } from "./telegram.js";
 import { claudePlanner, type Planner } from "./planner.js";
 import { freeSlots, upcomingSlots } from "./slots.js";
 import * as store from "./store.js";
@@ -20,6 +24,11 @@ export type AgentSettings = {
   planDays: number;
   renderLeadHours: number;
   autoApprove: boolean;
+  autoApproveAfter?: number; // posted videos needed before autoApprove applies; default 0
+  monthlyBudgetUsd?: number;
+  platformDelays?: Partial<Record<Platform, number>>; // minutes after the slot, per platform
+  keepRendersDays?: number; // 0 or unset = keep
+  outDir?: string; // only folders inside it are ever deleted
   platforms: Platform[];
   format?: VideoFormat; // default short
   statsHours?: number; // default 6
@@ -38,11 +47,24 @@ export type AgentDeps = {
     report: (now: Date) => Promise<void>;
   };
   comments?: { check: (now: Date) => Promise<CheckResult> }; // set when AGENT_COMMENT_REPLIES=true
+  // Approve from your phone (Telegram); set when TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID are
+  review?: { send: (video: store.VideoRow) => Promise<void>; poll: () => Promise<{ approved: number; rejected: number }> };
 };
 
-export type TickReport = { planned: number; rendered: string[]; posted: string[]; failed: string[]; released: number; statsSaved?: number; reportSent?: boolean; replyDrafts?: number };
+export type TickReport = { planned: number; rendered: string[]; posted: string[]; failed: string[]; released: number; statsSaved?: number; reportSent?: boolean; replyDrafts?: number; cleaned?: number };
 
 const STUCK_AFTER_MS = 60 * 60_000;
+
+// "facebook=60,instagram=120" → post Facebook an hour after the slot and Instagram two hours after.
+export function parsePlatformDelays(s: string | undefined): Partial<Record<Platform, number>> {
+  const out: Partial<Record<Platform, number>> = {};
+  for (const part of (s ?? "").split(",").map((p) => p.trim()).filter(Boolean)) {
+    const m = /^(youtube|facebook|instagram)\s*=\s*(\d+)$/i.exec(part);
+    if (!m) throw new Error(`AGENT_PLATFORM_DELAYS: "${part}" should look like instagram=120 (minutes after the slot).`);
+    out[m[1].toLowerCase() as Platform] = Number(m[2]);
+  }
+  return out;
+}
 
 export function settingsFromEnv(): AgentSettings {
   return {
@@ -50,6 +72,11 @@ export function settingsFromEnv(): AgentSettings {
     planDays: config.AGENT_PLAN_DAYS,
     renderLeadHours: config.AGENT_RENDER_LEAD_HOURS,
     autoApprove: config.AGENT_AUTO_APPROVE,
+    autoApproveAfter: config.AGENT_AUTO_APPROVE_AFTER,
+    monthlyBudgetUsd: config.AGENT_MONTHLY_BUDGET_USD,
+    platformDelays: parsePlatformDelays(config.AGENT_PLATFORM_DELAYS),
+    keepRendersDays: config.AGENT_KEEP_RENDERS_DAYS,
+    outDir: config.OUT_DIR,
     platforms: parsePlatforms(config.AGENT_PLATFORMS),
     format: config.VIDEO_FORMAT,
     statsHours: config.AGENT_STATS_HOURS,
@@ -65,7 +92,8 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
     settings: settingsFromEnv(),
     planner: opts.offline ? offlinePlanner : config.AGENT_NICHE ? claudePlanner(config.AGENT_NICHE, { format: config.VIDEO_FORMAT, language: config.VIDEO_LANGUAGE }) : undefined,
     render: async (v) => {
-      await makeVideo({ topic: v.topic, angle: v.angle ?? undefined, videoId: v.id, format: v.format, offline: opts.offline, log: () => {} });
+      const hookStyle = config.AGENT_HOOK_TESTS ? chooseHookStyle(await store.hookStyleStats()) : undefined;
+      await makeVideo({ topic: v.topic, angle: v.angle ?? undefined, videoId: v.id, format: v.format, hookStyle, offline: opts.offline, log: () => {} });
     },
     publish: (run, platforms) => publish(run, platforms, { privacy: "public" }),
     alert,
@@ -76,9 +104,12 @@ export function defaultDeps(opts: { offline?: boolean } = {}): AgentDeps {
           collect: (now) => collectStats(now, defaultFetchers(now, log)),
           report: async (now) => {
             const text = reportText(await buildReport(now));
-            if (!(await sendWebhook(text))) log(`Weekly report (set ALERT_WEBHOOK_URL to receive it):\n${text}`);
+            const sent = await sendWebhook(text);
+            if (telegramConfigured()) await sendText(text);
+            else if (!sent) log(`Weekly report (set ALERT_WEBHOOK_URL or Telegram to receive it):\n${text}`);
           },
         },
+    review: telegramConfigured() ? { send: sendForReview, poll: pollReviews } : undefined,
     comments:
       config.AGENT_COMMENT_REPLIES && !opts.offline ? { check: (now) => checkComments(now, realPlatforms, claudeDrafter()) } : undefined,
   };
@@ -106,14 +137,41 @@ export async function planAhead(deps: AgentDeps, now: Date): Promise<number> {
   return planned.length;
 }
 
+// True when the monthly budget is used up; alerts once per month.
+async function overBudget(deps: AgentDeps, now: Date): Promise<boolean> {
+  const budget = deps.settings.monthlyBudgetUsd;
+  if (budget == null) return false;
+  const spent = await store.monthSpend(now);
+  if (spent < budget) return false;
+  const month = now.toISOString().slice(0, 7);
+  if ((await store.getState("budget_alert_month")) !== month) {
+    await store.setState("budget_alert_month", month);
+    await deps.alert(`This month's spend is $${spent.toFixed(2)}, at the $${budget} budget. No new videos will be made until next month (raise AGENT_MONTHLY_BUDGET_USD to continue).`);
+  }
+  return true;
+}
+
+async function autoApproveNow(deps: AgentDeps): Promise<boolean> {
+  if (!deps.settings.autoApprove) return false;
+  const needed = deps.settings.autoApproveAfter ?? 0;
+  return needed === 0 || (await store.postedCount()) >= needed;
+}
+
 async function renderNext(deps: AgentDeps, now: Date): Promise<string | undefined> {
+  if (await overBudget(deps, now)) return undefined;
   const video = await store.claimIdeaToRender(new Date(now.getTime() + deps.settings.renderLeadHours * 3600_000));
   if (!video) return undefined;
   deps.log(`Making "${video.topic}" for ${video.publish_at?.toISOString()}`);
   try {
     await deps.render(video);
-    if (deps.settings.autoApprove) await store.setStatus(video.id, "approved");
-    else await store.setStatus(video.id, "rendered");
+    if (await autoApproveNow(deps)) await store.setStatus(video.id, "approved");
+    else {
+      await store.setStatus(video.id, "rendered");
+      if (deps.review) {
+        const rendered = await store.getVideo(video.id);
+        if (rendered) await deps.review.send(rendered).catch((err) => deps.log(`Couldn't send for review on Telegram: ${(err as Error).message}`));
+      }
+    }
     return video.id;
   } catch (err) {
     const message = (err as Error).message;
@@ -123,12 +181,13 @@ async function renderNext(deps: AgentDeps, now: Date): Promise<string | undefine
   }
 }
 
-async function postOne(deps: AgentDeps, video: store.VideoRow): Promise<"posted" | "failed" | "retry"> {
+async function postOne(deps: AgentDeps, video: store.VideoRow, now: Date): Promise<"posted" | "failed" | "retry"> {
   const done = (p?: store.PostRow) => p && (p.status === "published" || p.status === "scheduled");
+  const due = (pl: Platform) => !video.publish_at || video.publish_at.getTime() + (deps.settings.platformDelays?.[pl] ?? 0) * 60_000 <= now.getTime();
   const before = await store.postsFor(video.id);
   const pending = video.platforms.filter((pl) => {
     const p = before.find((x) => x.platform === pl);
-    return !done(p) && (p?.attempts ?? 0) < store.MAX_POST_ATTEMPTS;
+    return !done(p) && (p?.attempts ?? 0) < store.MAX_POST_ATTEMPTS && due(pl);
   });
 
   if (pending.length) {
@@ -194,6 +253,26 @@ async function analyticsStep(deps: AgentDeps, now: Date, report: TickReport): Pr
   }
 }
 
+// Once a day, deletes the local files of videos that are posted (they live on the platforms and R2) or rejected.
+async function cleanupStep(deps: AgentDeps, now: Date): Promise<number | undefined> {
+  const days = deps.settings.keepRendersDays;
+  if (!days || !deps.settings.outDir) return undefined;
+  const today = now.toISOString().slice(0, 10);
+  if ((await store.getState("cleanup_on")) === today) return undefined;
+  await store.setState("cleanup_on", today);
+  const root = resolve(deps.settings.outDir);
+  let removed = 0;
+  for (const v of await store.oldRenders(new Date(now.getTime() - days * 86400_000))) {
+    const dir = resolve(v.local_dir);
+    if (!dir.startsWith(root + sep)) continue; // never touch anything outside the output folder
+    await rm(dir, { recursive: true, force: true });
+    await store.clearLocalDir(v.id);
+    removed++;
+  }
+  if (removed) deps.log(`Deleted local files of ${removed} old video(s)`);
+  return removed;
+}
+
 // One pass of the agent: free stuck jobs, top up the calendar, make one video, post everything that's due, then stats.
 export async function tick(deps: AgentDeps, now = new Date()): Promise<TickReport> {
   const report: TickReport = { planned: 0, rendered: [], posted: [], failed: [], released: 0 };
@@ -206,6 +285,14 @@ export async function tick(deps: AgentDeps, now = new Date()): Promise<TickRepor
     await deps.alert(`Planning failed: ${(err as Error).message}`);
   }
 
+  if (deps.review) {
+    try {
+      await deps.review.poll();
+    } catch (err) {
+      deps.log(`Telegram: ${(err as Error).message}`);
+    }
+  }
+
   const rendered = await renderNext(deps, now);
   if (rendered) report.rendered.push(rendered);
 
@@ -214,7 +301,7 @@ export async function tick(deps: AgentDeps, now = new Date()): Promise<TickRepor
   for (let video = await store.claimApprovedToPost(now); video; video = await store.claimApprovedToPost(now, seen)) {
     seen.push(video.id);
     try {
-      const outcome = await postOne(deps, video);
+      const outcome = await postOne(deps, video, now);
       if (outcome === "posted") report.posted.push(video.id);
       if (outcome === "failed") report.failed.push(video.id);
     } catch (err) {
@@ -225,5 +312,6 @@ export async function tick(deps: AgentDeps, now = new Date()): Promise<TickRepor
   }
 
   await analyticsStep(deps, now, report);
+  report.cleaned = await cleanupStep(deps, now);
   return report;
 }

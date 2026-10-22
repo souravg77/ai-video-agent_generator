@@ -15,6 +15,7 @@ export type VideoRow = {
   platforms: Platform[];
   format: VideoFormat;
   language: string | null;
+  hook_style: string | null;
   local_dir: string | null;
   public_url: string | null;
   error: string | null;
@@ -69,6 +70,48 @@ export async function pastVideos(limit = 30): Promise<{ title: string; views: nu
     [limit],
   );
   return rows.map((r) => ({ title: r.title, views: r.views == null ? null : Number(r.views) }));
+}
+
+// Average total views per video for each hook style, over posted videos from the last 90 days.
+export async function hookStyleStats(now = new Date()): Promise<{ style: string; videos: number; avgViews: number }[]> {
+  const { rows } = await db().query<{ style: string; videos: string; avg_views: string | null }>(
+    `SELECT v.hook_style AS style, count(*) AS videos, AVG(COALESCE(t.views, 0)) AS avg_views
+       FROM videos v
+       LEFT JOIN LATERAL (
+         SELECT SUM(latest.views) AS views FROM posts p
+           LEFT JOIN LATERAL (SELECT views FROM post_stats s WHERE s.post_id = p.id ORDER BY captured_at DESC LIMIT 1) latest ON true
+          WHERE p.video_id = v.id
+       ) t ON true
+      WHERE v.status = 'posted' AND v.hook_style IS NOT NULL AND v.updated_at >= $1
+      GROUP BY v.hook_style ORDER BY avg_views DESC NULLS LAST`,
+    [new Date(now.getTime() - 90 * 86400_000)],
+  );
+  return rows.map((r) => ({ style: r.style, videos: Number(r.videos), avgViews: Number(r.avg_views ?? 0) }));
+}
+
+export async function postedCount(): Promise<number> {
+  const { rows } = await db().query<{ n: string }>("SELECT count(*) AS n FROM videos WHERE status = 'posted'");
+  return Number(rows[0].n);
+}
+
+// What videos made since the start of this UTC month cost.
+export async function monthSpend(now: Date): Promise<number> {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const { rows } = await db().query<{ total: string | null }>("SELECT SUM(cost_usd) AS total FROM videos WHERE created_at >= $1", [start]);
+  return Number(rows[0].total ?? 0);
+}
+
+// Finished videos whose local files can go: posted or rejected, untouched for `days`.
+export async function oldRenders(before: Date): Promise<{ id: string; local_dir: string }[]> {
+  const { rows } = await db().query<{ id: string; local_dir: string }>(
+    "SELECT id, local_dir FROM videos WHERE status IN ('posted', 'rejected') AND local_dir IS NOT NULL AND updated_at < $1",
+    [before],
+  );
+  return rows;
+}
+
+export async function clearLocalDir(id: string): Promise<void> {
+  await db().query("UPDATE videos SET local_dir = NULL WHERE id = $1", [id]);
 }
 
 export async function getState(key: string): Promise<string | undefined> {

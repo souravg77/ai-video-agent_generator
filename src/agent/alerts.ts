@@ -1,4 +1,5 @@
 import { BRAND, config } from "../config.js";
+import { sendText } from "./telegram.js";
 
 const NAME = `Video agent${BRAND ? ` (${BRAND})` : ""}`;
 
@@ -6,6 +7,7 @@ const NAME = `Video agent${BRAND ? ` (${BRAND})` : ""}`;
 export async function alert(message: string): Promise<void> {
   console.error(`[alert] ${message}`);
   await sendWebhook(`${NAME}: ${message}`);
+  await sendText(`${NAME}: ${message}`).catch((err) => console.error(`[alert] Telegram failed: ${(err as Error).message}`));
 }
 
 // Discord rejects messages over 2,000 characters.

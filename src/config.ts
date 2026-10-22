@@ -34,6 +34,15 @@ const schema = z.object({
     .or(z.literal("").transform(() => undefined)),
   OUT_DIR: optional,
 
+  // Generated video for the opening scene (off | hook) via fal.ai; everything else stays stock footage
+  GENERATED_CLIPS: z.enum(["off", "hook"]).default("off"),
+  FAL_KEY: optional,
+  FAL_VIDEO_MODEL: z.string().default("fal-ai/kling-video/v2.1/standard/text-to-video"),
+  FAL_EXTRA_INPUT: optional, // JSON merged into the model's input, for model-specific options
+  GENERATED_CLIP_SECONDS: z.coerce.number().int().min(1).max(20).default(5),
+  // Your model's price, for cost tracking; check fal.ai's pricing page
+  GENERATED_CLIP_USD_PER_SECOND: z.coerce.number().min(0).default(0.1),
+
   // Language the videos are written and spoken in, e.g. "Spanish". Stock footage searches stay in English.
   VIDEO_LANGUAGE: z.string().default("English"),
   // short = 9:16 Shorts/Reels; long = 16:9 YouTube videos of a few minutes (YouTube only)
@@ -69,9 +78,30 @@ const schema = z.object({
     .string()
     .optional()
     .transform((v) => v === "true" || v === "1"),
+  // Auto-approve only kicks in once this many videos have been posted with approval
+  AGENT_AUTO_APPROVE_AFTER: z.coerce.number().int().min(0).default(30),
+  // Rotate hook styles and favour the ones that get more views (see src/pipeline/hooks.ts)
+  AGENT_HOOK_TESTS: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((v) => v === "true"),
+  // Post some platforms later than the slot, in minutes, e.g. "facebook=60,instagram=120"
+  AGENT_PLATFORM_DELAYS: optional,
   AGENT_TICK_SECONDS: z.coerce.number().int().min(10).default(60),
+  // Stop making new videos once this month's spend (Claude + voice + generated clips) reaches this, in USD
+  AGENT_MONTHLY_BUDGET_USD: z.coerce.number().min(0).optional(),
+  // Delete local files of posted or rejected videos after this many days (0 = keep forever)
+  AGENT_KEEP_RENDERS_DAYS: z.coerce.number().int().min(0).default(14),
   REVIEW_PORT: z.coerce.number().int().default(3000),
   REVIEW_PASSWORD: optional,
+  // Address the review page listens on; the Docker image sets 0.0.0.0 so Caddy can reach it
+  REVIEW_HOST: optional,
+  // Shown on the public /privacy and /data-deletion pages that Google and Meta reviewers ask for
+  // Approve from your phone: a bot from @BotFather and your chat id (see docs/hosting.md)
+  TELEGRAM_BOT_TOKEN: optional,
+  TELEGRAM_CHAT_ID: optional,
+  PRIVACY_OWNER_NAME: optional,
+  PRIVACY_CONTACT_EMAIL: optional,
   ALERT_WEBHOOK_URL: optional,
   AGENT_STATS_HOURS: z.coerce.number().min(1).default(6),
   // 0 = Sunday … 6 = Saturday; the weekly report goes out on this day after 09:00 UTC
@@ -102,4 +132,5 @@ export const requirements = {
   YouTube: ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"],
   "Facebook Page": ["META_APP_ID", "META_APP_SECRET", "META_PAGE_ID", "META_PAGE_ACCESS_TOKEN"],
   Instagram: ["META_IG_USER_ID", "META_PAGE_ACCESS_TOKEN"],
+  "Telegram approval (optional)": ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"],
 } as const satisfies Record<string, readonly (keyof Config)[]>;

@@ -43,6 +43,16 @@ The review page only listens on this computer unless `REVIEW_PASSWORD` is set; w
 
 The agent needs `DATABASE_URL`. A crash mid-render or mid-post is recovered automatically after an hour.
 
+## Running it for real
+
+[docs/hosting.md](docs/hosting.md) covers:
+
+- `docker compose up -d` (agent, Postgres, and Caddy for HTTPS)
+- approving videos from your phone with Telegram buttons
+- the public `/privacy` and `/data-deletion` pages that Google and Meta ask for
+- spend and safety switches: monthly budget, auto-approve only after 30 approved posts, old file cleanup, per-platform delays
+- hook-style tests, long-video thumbnails, and an optional generated opening clip
+
 ## Scaling up
 
 | | How |
@@ -129,6 +139,7 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 | `npm run agent:add -- --topic "…" --at …` | Adds an idea to the calendar |
 | `npm run agents` | Runs one agent per brand in `brands/` |
 | `npm run comments` | Fetches new comments and drafts replies for the review page |
+| `npm run telegram:setup` | Finds your Telegram chat id after you message your bot |
 | `npm run report` | Weekly report: views, best and weakest videos, spend (`--days`, `--send`) |
 | `npm run stats` | Saves a views/likes/watch-time snapshot for recent posts |
 | `npm run post` | Posts a finished video to YouTube, Facebook and Instagram |
@@ -145,10 +156,10 @@ npm run post:youtube -- --dir out/<folder> --dry-run     # show the title, descr
 src/config.ts       env loading and per-integration requirements
 src/pipeline/       script, voice, visuals, captions, render, orchestration
 src/publish/        posting a finished video to YouTube, Facebook and Instagram
-src/agent/          planner, posting slots, job queue in Postgres, worker loop, alerts
+src/agent/          planner, posting slots, job queue in Postgres, worker loop, alerts, Telegram approval
 src/analytics/      stats from each platform, weekly report
 src/comments/      fetching comments, Claude's reply drafts, sending approved replies
-src/review/         review page (watch, edit, approve, reject, retry) and report page
+src/review/         review page (watch, edit, approve, reject, retry), report page, privacy pages
 src/lib/            helpers (YouTube and Meta APIs, FFmpeg, storage, database, Graph API, .env writer)
 scripts/            CLI entry points (make-video, setup and auth)
 test/               unit tests

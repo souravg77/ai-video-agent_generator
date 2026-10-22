@@ -4,6 +4,7 @@ import { z } from "zod/v4"; // the SDK's zodOutputFormat helper needs zod v4 sch
 import { config } from "../config.js";
 import { claudeCostUsd } from "../lib/costs.js";
 import type { VideoFormat } from "./captions.js";
+import { HOOK_STYLES, type HookStyle } from "./hooks.js";
 
 export const SceneSchema = z.object({
   narration: z.string().describe("What the voice-over says in this scene, one or two short sentences"),
@@ -22,7 +23,7 @@ export const VideoScriptSchema = z.object({
 export type Scene = z.infer<typeof SceneSchema>;
 export type VideoScript = z.infer<typeof VideoScriptSchema>;
 
-export type ScriptOptions = { format?: VideoFormat; language?: string };
+export type ScriptOptions = { format?: VideoFormat; language?: string; hookStyle?: HookStyle };
 
 export function scriptSystemPrompt(opts: ScriptOptions = {}): string {
   const language = opts.language ?? "English";
@@ -39,7 +40,8 @@ Open with a hook that creates curiosity.`;
     language.toLowerCase() === "english"
       ? ""
       : `\nWrite the hook, narration, on_screen_text, title, description and hashtags in ${language}, as a native speaker would. Write every visual_query in English, because the stock footage site is searched in English.`;
-  return `${shape}
+  const hook = opts.hookStyle ? `\nThe hook must be ${HOOK_STYLES[opts.hookStyle]}.` : "";
+  return `${shape}${hook}
 Keep sentences short and spoken, not written.
 Every visual_query must describe footage that plausibly exists on a stock site.
 Stay factual; do not invent statistics.${lang}`;

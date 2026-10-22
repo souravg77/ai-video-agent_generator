@@ -368,4 +368,118 @@ describe("agent with Postgres", { skip: !url && "set TEST_DATABASE_URL to run" }
     assert.deepEqual(rows.map((r) => r.table_name), ["agent_state", "comments", "post_stats", "posts", "videos"]);
     await db().query("DROP SCHEMA brand_test CASCADE");
   });
+
+  test("monthly budget stops new renders and alerts once", async () => {
+    let renders = 0;
+    const d = deps({ planner: undefined, render: async () => void renders++, settings: { ...settings, monthlyBudgetUsd: 1 } });
+    await db().query("INSERT INTO videos (topic, status, cost_usd) VALUES ('spent', 'posted', 1.5)");
+    await store.insertIdeas([{ topic: "t", angle: "", publishAt: now, platforms: ["youtube"] }]);
+    await tick(d, now);
+    await tick(d, now);
+    assert.equal(renders, 0);
+    assert.equal(alerts.filter((a) => a.includes("budget")).length, 1);
+  });
+
+  test("auto-approve waits until enough videos were posted with approval", async () => {
+    const d = deps({ planner: undefined, settings: { ...settings, autoApprove: true, autoApproveAfter: 2 } });
+    await store.insertIdeas([{ topic: "a", angle: "", publishAt: now, platforms: ["youtube"] }]);
+    await tick(d, now);
+    assert.equal((await store.listVideos(["rendered"])).length, 1); // still needs review
+    await db().query("INSERT INTO videos (topic, status) VALUES ('p1', 'posted'), ('p2', 'posted')");
+    await store.insertIdeas([{ topic: "b", angle: "", publishAt: now, platforms: ["youtube"] }]);
+    await tick(d, now);
+    assert.ok((await store.listVideos(["approved", "posting", "posted"])).some((v) => v.topic === "b"));
+  });
+
+  test("platform delays post later platforms on later ticks", async () => {
+    const d = deps({ planner: undefined, settings: { ...settings, autoApprove: true, platformDelays: { instagram: 120 } } });
+    await store.insertIdeas([{ topic: "t", angle: "", publishAt: now, platforms: ["youtube", "instagram"] }]);
+    await tick(d, now);
+    assert.deepEqual(publishCalls, ["youtube"]);
+    await tick(d, new Date(now.getTime() + 60 * 60_000));
+    assert.deepEqual(publishCalls, ["youtube"]);
+    const r = await tick(d, new Date(now.getTime() + 121 * 60_000));
+    assert.deepEqual(publishCalls, ["youtube", "instagram"]);
+    assert.equal(r.posted.length, 1);
+  });
+
+  test("old renders inside the output folder are deleted once a day", async () => {
+    const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises");
+    const { existsSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const root = await mkdtemp(join(tmpdir(), "out-"));
+    const inside = join(root, "run1");
+    const outside = await mkdtemp(join(tmpdir(), "elsewhere-"));
+    await mkdir(inside);
+    await writeFile(join(inside, "video.mp4"), "x");
+    await db().query(
+      "INSERT INTO videos (topic, status, local_dir, updated_at) VALUES ('old', 'posted', $1, now() - interval '30 days'), ('outside', 'posted', $2, now() - interval '30 days'), ('new', 'posted', $1, now())",
+      [inside, outside],
+    );
+    const d = deps({ planner: undefined, settings: { ...settings, keepRendersDays: 14, outDir: root } });
+    const r = await tick(d, new Date());
+    assert.equal(r.cleaned, 1);
+    assert.ok(!existsSync(inside));
+    assert.ok(existsSync(outside));
+    const { rows } = await db().query("SELECT topic FROM videos WHERE local_dir IS NULL");
+    assert.deepEqual(rows.map((x) => x.topic), ["old"]);
+  });
+
+  test("Telegram buttons approve or reject, only from the configured chat", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "t";
+    const { config } = await import("../src/config.js");
+    Object.assign(config, { TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "42" });
+    const telegram = await import("../src/agent/telegram.js");
+    await store.insertIdeas([
+      { topic: "a", angle: "", publishAt: new Date("2026-10-22T15:00:00Z"), platforms: ["youtube"] },
+      { topic: "b", angle: "", publishAt: new Date("2026-10-23T15:00:00Z"), platforms: ["youtube"] },
+    ]);
+    await tick(deps({ planner: undefined }), now);
+    await tick(deps({ planner: undefined }), now);
+    const [a, b] = (await store.listVideos(["rendered"])).sort((x, y) => x.topic.localeCompare(y.topic));
+    const press = (id: number, chat: number, data: string) => ({ update_id: id, callback_query: { id: `q${id}`, data, from: { id: chat }, message: { message_id: id, chat: { id: chat }, caption: "Needs review" } } });
+    const sent: string[] = [];
+    telegram.tg.fetch = async (url, init) => {
+      const method = url.split("/").pop()!;
+      sent.push(method);
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      if (method === "getUpdates") {
+        return Response.json({ ok: true, result: body.offset === 0 ? [press(1, 999, `approve:${a.id}`), press(2, 42, `approve:${a.id}`), press(3, 42, `reject:${b.id}`)] : [] });
+      }
+      return Response.json({ ok: true, result: true });
+    };
+    assert.deepEqual(await telegram.pollReviews(), { approved: 1, rejected: 1 });
+    assert.equal((await store.getVideo(a.id))?.status, "approved");
+    assert.equal((await store.getVideo(b.id))?.status, "rejected");
+    assert.equal(await store.getState("telegram_offset"), "4");
+    assert.deepEqual(await telegram.pollReviews(), { approved: 0, rejected: 0 });
+    assert.ok(sent.includes("editMessageCaption"));
+    Object.assign(config, { TELEGRAM_BOT_TOKEN: undefined, TELEGRAM_CHAT_ID: undefined });
+  });
+
+  test("hook style stats and the report rank styles by average views", async () => {
+    const at = new Date("2026-10-20T15:00:00Z");
+    const q = await postedVideo("q", at, ["youtube"]);
+    const s = await postedVideo("s", at, ["youtube"]);
+    await db().query("UPDATE videos SET hook_style = 'question' WHERE id = $1", [q]);
+    await db().query("UPDATE videos SET hook_style = 'story' WHERE id = $1", [s]);
+    await collectStats(now, fakeFetchers({ "youtube-q": 100, "youtube-s": 900 }));
+    const stats = await store.hookStyleStats(now);
+    assert.deepEqual(stats.map((x) => [x.style, x.avgViews]), [["story", 900], ["question", 100]]);
+    assert.match(reportText(await buildReport(now)), /Hook styles \(90 days, avg views\): story 900 \(1\) · question 100 \(1\)/);
+  });
+
+  test("privacy pages and health check are public even with a password", async () => {
+    const server = await startReviewServer({ port: 0, password: "pw", host: "127.0.0.1" });
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      assert.equal((await fetch(`${base}/privacy`)).status, 200);
+      assert.equal((await fetch(`${base}/data-deletion`)).status, 200);
+      assert.equal(await (await fetch(`${base}/health`)).text(), "ok");
+      assert.equal((await fetch(`${base}/report`)).status, 401);
+    } finally {
+      server.close();
+    }
+  });
 });

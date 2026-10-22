@@ -1,0 +1,4 @@
+# HTTPS in front of the review page. Caddy gets the certificate for DOMAIN automatically.
+{$DOMAIN} {
+	reverse_proxy agent:{$REVIEW_PORT:3000}
+}

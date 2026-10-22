@@ -8,6 +8,7 @@ import { basename } from "node:path";
 import { parseArgs } from "node:util";
 import { config } from "../src/config.js";
 import { closeDb } from "../src/lib/db.js";
+import { HOOK_STYLES, isHookStyle, type HookStyle } from "../src/pipeline/hooks.js";
 import { makeVideo } from "../src/pipeline/index.js";
 
 const { values } = parseArgs({
@@ -20,9 +21,14 @@ const { values } = parseArgs({
     long: { type: "boolean", default: false },
     language: { type: "string" },
     translate: { type: "string" },
+    "hook-style": { type: "string" },
   },
 });
 
+if (values["hook-style"] && !isHookStyle(values["hook-style"])) {
+  console.error(`--hook-style must be one of: ${Object.keys(HOOK_STYLES).join(", ")}`);
+  process.exit(1);
+}
 if (values.translate && !values.language) {
   console.error("--translate needs --language, e.g. --language Spanish");
   process.exit(1);
@@ -40,6 +46,7 @@ try {
     format: values.long ? "long" : undefined,
     language: values.language,
     translateFrom: values.translate,
+    hookStyle: values["hook-style"] as HookStyle | undefined,
     offline: values.offline,
     outDir: values.out ?? config.OUT_DIR,
     musicPath: values.music,
