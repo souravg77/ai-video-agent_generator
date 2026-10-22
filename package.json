@@ -15,13 +15,14 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "typecheck": "tsc --noEmit",
     "make": "tsx scripts/make-video.ts",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "post:youtube": "tsx scripts/post-youtube.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.133.0",
     "@aws-sdk/client-s3": "3.1149.0",
     "dotenv": "16.4.5",
-    "googleapis": "144.0.0",
+    "googleapis": "183.0.0",
     "pg": "8.13.1",
     "zod": "3.25.76"
   },

@@ -43,3 +43,26 @@ export async function closeDb(): Promise<void> {
   await pool?.end();
   pool = undefined;
 }
+
+export type Platform = "youtube" | "facebook" | "instagram";
+
+// One row per (video, platform); re-posting the same video overwrites the previous attempt.
+export async function upsertPost(
+  videoId: string,
+  platform: Platform,
+  fields: { status: string; scheduled_for?: Date; external_id?: string; url?: string; error?: string; published_at?: Date },
+): Promise<void> {
+  await db().query(
+    `INSERT INTO posts (video_id, platform, status, scheduled_for, external_id, url, error, published_at, attempts)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1)
+     ON CONFLICT (video_id, platform) DO UPDATE SET
+       status = EXCLUDED.status,
+       scheduled_for = COALESCE(EXCLUDED.scheduled_for, posts.scheduled_for),
+       external_id = COALESCE(EXCLUDED.external_id, posts.external_id),
+       url = COALESCE(EXCLUDED.url, posts.url),
+       error = EXCLUDED.error,
+       published_at = COALESCE(EXCLUDED.published_at, posts.published_at),
+       attempts = posts.attempts + CASE WHEN EXCLUDED.status = 'uploading' THEN 1 ELSE 0 END`,
+    [videoId, platform, fields.status, fields.scheduled_for ?? null, fields.external_id ?? null, fields.url ?? null, fields.error ?? null, fields.published_at ?? null],
+  );
+}
