@@ -157,6 +157,15 @@ export function renderStudioPage(): string {
         <label class="check"><input type="checkbox" id="offline"> Offline sample (no keys)</label>
       </div>
       <div class="row">
+        <span class="fld" style="margin:0 2px 0 0">Length</span>
+        <div class="seg" id="lenSeg" role="group" aria-label="Length">
+          <button data-min="0" aria-pressed="true">Auto</button>
+          <button data-min="1" aria-pressed="false">~1 min</button>
+          <button data-min="2" aria-pressed="false">~2 min</button>
+          <button data-min="4" aria-pressed="false">~4 min</button>
+        </div>
+      </div>
+      <div class="row">
         <button class="btn primary" id="makeBtn" style="flex:1; justify-content:center">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9z"/></svg>
           Make video
@@ -228,6 +237,27 @@ export function renderStudioPage(): string {
     <div><label class="fld" for="k_anthropic">Claude — ANTHROPIC_API_KEY</label><input type="password" id="k_anthropic" placeholder="sk-ant-..." autocomplete="off"></div>
     <div><label class="fld" for="k_eleven">ElevenLabs — ELEVENLABS_API_KEY</label><input type="password" id="k_eleven" placeholder="..." autocomplete="off"></div>
     <div><label class="fld" for="k_pexels">Pexels — PEXELS_API_KEY</label><input type="password" id="k_pexels" placeholder="..." autocomplete="off"></div>
+    <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label class="fld" for="footageSel">Footage — what fills the screen</label>
+      <select id="footageSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
+        <option value="generated">Generated backgrounds (free, instant, abstract colours)</option>
+        <option value="generated-local">Local AI images — real pictures on your GPU (FLUX/SDXL)</option>
+        <option value="pexels">Pexels stock footage (needs the key above + internet)</option>
+        <option value="folder">My own clips folder</option>
+      </select>
+      <div id="imageCfg" hidden style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        <div>
+          <label class="fld" for="imgApiSel">Local image server</label>
+          <select id="imgApiSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
+            <option value="comfyui">ComfyUI (recommended — just install ComfyUI + a FLUX model)</option>
+            <option value="openai">OpenAI-style image server (LocalAI, SwarmUI, …)</option>
+          </select>
+        </div>
+        <div><label class="fld" for="imgUrl">Server address — IMAGE_BASE_URL</label><input type="text" id="imgUrl" placeholder="http://localhost:8188" autocomplete="off"></div>
+        <div><label class="fld" for="imgModel">Model / checkpoint — IMAGE_MODEL</label><input type="text" id="imgModel" placeholder="flux1-schnell-fp8.safetensors" autocomplete="off"></div>
+        <p class="hint" style="margin:0">Needs a GPU. Setup guide: <span class="mono">docs/local-footage.md</span> in the project.</p>
+      </div>
+    </div>
     <button class="btn primary" id="saveSettings" style="justify-content:center">Save</button>
     <p class="hint" id="settingsNote" hidden></p>
     <div style="border-top:1px solid var(--line);padding-top:14px">
@@ -244,6 +274,7 @@ export function renderStudioPage(): string {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var format = "short";
+  var minutes = 0; // 0 = auto (format default)
   var busy = false;
 
   function el(line, cls) { var s = document.createElement("span"); s.className = "l" + (cls ? " " + cls : ""); s.textContent = line; return s; }
@@ -275,6 +306,14 @@ export function renderStudioPage(): string {
       rc.addEventListener("click", loadStatus);
       bar.appendChild(rc);
 
+      // Prefill the Settings footage controls from the live config.
+      if (s.footage && $("footageSel")) { $("footageSel").value = s.footage; toggleImageCfg(); }
+      if (s.image) {
+        if ($("imgApiSel") && s.image.api) $("imgApiSel").value = s.image.api;
+        if ($("imgUrl")) $("imgUrl").value = s.image.baseUrl || "";
+        if ($("imgModel")) $("imgModel").value = s.image.model || "";
+      }
+
       var banner = $("statusBanner");
       var keys = s.reasons ? Object.keys(s.reasons) : [];
       if (keys.length) {
@@ -283,6 +322,17 @@ export function renderStudioPage(): string {
         var ul = document.createElement("ul");
         keys.forEach(function (k) { var li = document.createElement("li"); li.textContent = s.reasons[k]; ul.appendChild(li); });
         banner.appendChild(ul);
+        // One-click fix for the footage step: switch to the free generated backgrounds.
+        if (s.reasons.footage) {
+          var fb = document.createElement("button"); fb.type = "button"; fb.className = "btn primary"; fb.style.margin = "2px 0 4px";
+          fb.textContent = "Use generated backgrounds";
+          fb.addEventListener("click", function () {
+            fb.disabled = true; fb.textContent = "Switching…";
+            fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ footage: "generated" }) })
+              .then(function (r) { return r.json(); }).then(function () { loadStatus(); }).catch(function () { fb.disabled = false; fb.textContent = "Use generated backgrounds"; });
+          });
+          banner.appendChild(fb);
+        }
         if (s.pullModel) {
           var pb = document.createElement("div");
           pb.innerHTML =
@@ -343,7 +393,7 @@ export function renderStudioPage(): string {
     $("makeBtn").innerHTML = '<span class="spinner"></span> Working…';
     fetch("/api/make", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic: topic, format: format, offline: $("offline").checked })
+      body: JSON.stringify({ topic: topic, format: format, minutes: minutes, offline: $("offline").checked })
     }).then(function (r) { return r.json(); }).then(function (res) {
       if (res.error) { throw new Error(res.error); }
       var es = new EventSource("/api/jobs/" + res.id + "/events");
@@ -398,17 +448,28 @@ export function renderStudioPage(): string {
   }
 
   // ---- settings ----
+  function toggleImageCfg() {
+    var local = $("footageSel") && $("footageSel").value === "generated-local";
+    if ($("imageCfg")) $("imageCfg").hidden = !local;
+  }
   function saveSettings() {
     var body = {
       ANTHROPIC_API_KEY: $("k_anthropic").value,
       ELEVENLABS_API_KEY: $("k_eleven").value,
-      PEXELS_API_KEY: $("k_pexels").value
+      PEXELS_API_KEY: $("k_pexels").value,
+      footage: $("footageSel") ? $("footageSel").value : ""
     };
+    if ($("footageSel") && $("footageSel").value === "generated-local") {
+      body.IMAGE_API = $("imgApiSel") ? $("imgApiSel").value : "";
+      body.IMAGE_BASE_URL = $("imgUrl") ? $("imgUrl").value.trim() : "";
+      body.IMAGE_MODEL = $("imgModel") ? $("imgModel").value.trim() : "";
+    }
     fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) { return r.json(); }).then(function (res) {
         var n = $("settingsNote"); n.hidden = false;
         n.textContent = res.saved && res.saved.length ? "Saved " + res.saved.join(", ") + ". " + res.note : "Nothing to save.";
         $("k_anthropic").value = $("k_eleven").value = $("k_pexels").value = "";
+        loadStatus(); // reflect a footage change in the pills/banner right away
       }).catch(function () {});
   }
 
@@ -548,10 +609,16 @@ export function renderStudioPage(): string {
     format = b.getAttribute("data-format");
     this.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
   });
+  $("lenSeg").addEventListener("click", function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    minutes = parseInt(b.getAttribute("data-min"), 10) || 0;
+    this.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b ? "true" : "false"); });
+  });
   $("makeBtn").addEventListener("click", make);
   $("topic").addEventListener("keydown", function (e) { if (e.key === "Enter") make(); });
   $("settingsBtn").addEventListener("click", function () { $("settingsDlg").showModal(); });
   $("closeSettings").addEventListener("click", function () { $("settingsDlg").close(); });
+  $("footageSel").addEventListener("change", toggleImageCfg);
   $("saveSettings").addEventListener("click", saveSettings);
   $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
 

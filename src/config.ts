@@ -57,16 +57,25 @@ const schema = z.object({
   // Your own clips for VISUALS_PROVIDER=folder; file names are matched to each scene's search words
   FOOTAGE_DIR: z.string().default("footage"),
 
-  // Local AI footage (VISUALS_PROVIDER=generated-local): generate a still per scene from an
-  // OpenAI-style image server (LocalAI, SwarmUI, openedai-images, or ComfyUI behind a shim)
-  // running FLUX or SDXL, then animate it with a slow zoom/pan. Runs on your own GPU — no API,
-  // no per-image cost. See docs/open-source-ai.md.
-  IMAGE_BASE_URL: z.string().default("http://localhost:8080/v1"),
+  // Local AI footage (VISUALS_PROVIDER=generated-local): generate a still per scene from a
+  // local image model (FLUX or SDXL) on your own GPU, then animate it with a slow zoom/pan.
+  // No API, no per-image cost. See docs/local-footage.md.
+  //   IMAGE_API=comfyui  — talk to ComfyUI directly (the easiest Windows setup; just install
+  //                        ComfyUI + a FLUX model). IMAGE_BASE_URL is its address, e.g.
+  //                        http://localhost:8188 . IMAGE_MODEL is the checkpoint file name.
+  //   IMAGE_API=openai   — any server with an OpenAI /v1/images/generations endpoint
+  //                        (LocalAI, SwarmUI, openedai-images). IMAGE_BASE_URL ends in /v1.
+  IMAGE_API: z.enum(["comfyui", "openai"]).default("comfyui"),
+  IMAGE_BASE_URL: z.string().default("http://localhost:8188"),
   IMAGE_API_KEY: optional,
-  IMAGE_MODEL: z.string().default("flux.1-schnell"),
-  // Size the server generates at (then upscaled/cropped to the video frame). Blank = a
+  IMAGE_MODEL: z.string().default("flux1-schnell-fp8.safetensors"),
+  // Size the model generates at (then upscaled/cropped to the video frame). Blank = a
   // portrait/landscape size FLUX and SDXL handle well. Must be ones your model supports.
   IMAGE_SIZE: optional,
+  // A ComfyUI workflow in API format (File → Save (API Format)) to use instead of the built-in
+  // one, if you've set up a specific model/pipeline. The strings __PROMPT__, __WIDTH__,
+  // __HEIGHT__, __SEED__ and __MODEL__ are substituted. Unset = built-in FLUX-schnell workflow.
+  IMAGE_WORKFLOW: optional,
   IMAGE_USD_PER_IMAGE: z.coerce.number().min(0).default(0),
 
   ELEVENLABS_API_KEY: optional,

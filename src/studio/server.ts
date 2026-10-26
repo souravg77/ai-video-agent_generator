@@ -117,13 +117,16 @@ async function probeVoice(): Promise<Probe> {
 }
 
 async function probeImageServer(): Promise<Probe> {
-  const base = config.IMAGE_BASE_URL.replace(/\/$/, "");
+  const comfy = config.IMAGE_API === "comfyui";
+  const base = config.IMAGE_BASE_URL.replace(/\/+$/, "").replace(comfy ? /\/v1$/ : /$/, "");
+  // ComfyUI answers /system_stats; an OpenAI server answers /models. Any HTTP reply means it's up.
+  const probeUrl = comfy ? `${base}/system_stats` : `${base}/models`;
   try {
-    // Any HTTP reply (even 401/404) means the image server is reachable.
-    await fetch(`${base}/models`, { signal: AbortSignal.timeout(1500), headers: config.IMAGE_API_KEY ? { authorization: `Bearer ${config.IMAGE_API_KEY}` } : {} });
+    await fetch(probeUrl, { signal: AbortSignal.timeout(1500), headers: config.IMAGE_API_KEY ? { authorization: `Bearer ${config.IMAGE_API_KEY}` } : {} });
     return { ready: true };
   } catch {
-    return { ready: false, reason: `The image server isn't reachable at ${config.IMAGE_BASE_URL} — start your FLUX/SDXL server (see docs/open-source-ai.md), or switch footage to Generated.` };
+    const what = comfy ? "ComfyUI" : "the image server";
+    return { ready: false, reason: `${what} isn't reachable at ${config.IMAGE_BASE_URL} — start it (see docs/local-footage.md), or switch footage to Generated.` };
   }
 }
 
@@ -151,6 +154,8 @@ async function status() {
     pullModel: w.pullable === true, // Ollama is up but the model needs downloading
     model: config.OLLAMA_MODEL,
     language: config.VIDEO_LANGUAGE,
+    footage: config.VISUALS_PROVIDER,
+    image: { api: config.IMAGE_API, baseUrl: config.IMAGE_BASE_URL, model: config.IMAGE_MODEL },
   };
 }
 
@@ -397,8 +402,9 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!topic) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "A topic is required." }));
     const format = body.format === "long" ? "long" : "short";
     const offline = body.offline === true;
+    const minutes = typeof body.minutes === "number" && body.minutes > 0 ? Math.min(10, body.minutes) : undefined;
     const job = startJob(topic, (log) =>
-      makeVideo({ topic, format, offline, upload: false, log }).then((r) => ({
+      makeVideo({ topic, format, minutes, offline, upload: false, log }).then((r) => ({
         name: r.dir.split(/[\\/]/).pop() ?? "",
         title: r.script.title,
         durationSec: r.durationSec,
@@ -471,9 +477,27 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (str("ELEVENLABS_API_KEY")) values.ELEVENLABS_API_KEY = str("ELEVENLABS_API_KEY");
     if (str("PEXELS_API_KEY")) values.PEXELS_API_KEY = str("PEXELS_API_KEY");
     if (body.mode === "local" || body.mode === "cloud") values.AGENT_MODE = String(body.mode);
+
+    // The footage source and image-server settings apply immediately (mutating the live config),
+    // so Re-check reflects them without a restart.
+    const FOOTAGE = ["pexels", "folder", "generated", "generated-local"] as const;
+    if (FOOTAGE.includes(str("footage") as (typeof FOOTAGE)[number])) {
+      const f = str("footage") as (typeof FOOTAGE)[number];
+      values.VISUALS_PROVIDER = f;
+      config.VISUALS_PROVIDER = f;
+    }
+    if (str("IMAGE_API") === "comfyui" || str("IMAGE_API") === "openai") {
+      values.IMAGE_API = str("IMAGE_API");
+      config.IMAGE_API = str("IMAGE_API") as typeof config.IMAGE_API;
+    }
+    if (str("IMAGE_BASE_URL")) { values.IMAGE_BASE_URL = str("IMAGE_BASE_URL"); config.IMAGE_BASE_URL = str("IMAGE_BASE_URL"); }
+    if (str("IMAGE_MODEL")) { values.IMAGE_MODEL = str("IMAGE_MODEL"); config.IMAGE_MODEL = str("IMAGE_MODEL"); }
+    if (str("PEXELS_API_KEY")) config.PEXELS_API_KEY = str("PEXELS_API_KEY");
+
     if (Object.keys(values).length) writeEnv(values);
+    const keysOnly = Object.keys(values).every((k) => k.endsWith("_API_KEY") || k === "AGENT_MODE");
     res.writeHead(200, { "content-type": "application/json" });
-    return void res.end(JSON.stringify({ saved: Object.keys(values), note: "Restart the app for new settings to take effect." }));
+    return void res.end(JSON.stringify({ saved: Object.keys(values), note: keysOnly ? "Restart the app for new keys to take effect." : "Saved — press Re-check." }));
   }
 
   res.writeHead(404).end("Not found");

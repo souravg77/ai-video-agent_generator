@@ -63,7 +63,9 @@ own GPU — a FLUX or SDXL picture of what the scene describes — and animates 
 with a slow zoom/pan (Ken Burns), instead of downloading stock footage or using
 the plain gradient backgrounds. No API, no per-image cost.
 
-It talks to any server with an OpenAI-style `/v1/images/generations` endpoint:
+The easiest setup is **ComfyUI** talked to directly (one app, a FLUX model, no
+shim) — the full walkthrough is in **[local-footage.md](local-footage.md)**. It
+also works with any OpenAI-style `/v1/images/generations` server:
 
 ```sh
 VISUALS_PROVIDER=generated-local
