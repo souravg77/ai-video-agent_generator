@@ -8,7 +8,7 @@ import { Writable } from "node:stream";
 import { envFile } from "../src/config.js";
 import { writeEnv } from "../src/lib/env-file.js";
 import type { Platform } from "../src/lib/db.js";
-import { envForChoices, keysToAsk, STEP_OPTIONS, type SetupChoices } from "../src/lib/setup-choices.js";
+import { envForChoices, keysToAsk, OPEN_MODEL_SERVERS, STEP_OPTIONS, type SetupChoices } from "../src/lib/setup-choices.js";
 import { parsePlatforms } from "../src/publish/index.js";
 
 if (!process.stdin.isTTY) {
@@ -60,6 +60,29 @@ for (;;) {
 }
 
 const values = envForChoices(choices);
+const answer = async (question: string, fallback: string) => (await rl.question(`${question} [${fallback}]: `)).trim() || fallback;
+
+// Which open-source model, and where it runs.
+if (choices.writing === "ollama") {
+  values.OLLAMA_MODEL = await answer("\nOllama model (any from ollama.com/library, e.g. qwen3:8b, llama3.1:8b, gemma3:12b)", current.OLLAMA_MODEL ?? "qwen3:14b");
+}
+if (choices.writing === "openai-compatible") {
+  const known = OPEN_MODEL_SERVERS.findIndex((s) => s.url && s.url === current.OPENAI_BASE_URL);
+  console.log("\nWhich model server?");
+  OPEN_MODEL_SERVERS.forEach((s, i) => console.log(`  ${i + 1}. ${s.name}${s.url ? `  ${s.url}` : ""}`));
+  let server: (typeof OPEN_MODEL_SERVERS)[number] | undefined;
+  while (!server) server = OPEN_MODEL_SERVERS[Number(await answer(`Choose 1-${OPEN_MODEL_SERVERS.length}`, String(known >= 0 ? known + 1 : 1))) - 1];
+  values.OPENAI_BASE_URL = server.url && server.url !== current.OPENAI_BASE_URL ? server.url : await answer("Server address (ends in /v1)", current.OPENAI_BASE_URL ?? (server.url || "http://localhost:8000/v1"));
+  values.OPENAI_MODEL = await answer(`Model (${server.models})`, server.url === current.OPENAI_BASE_URL && current.OPENAI_MODEL ? current.OPENAI_MODEL : server.model || "local");
+  if (server.key || server.name.startsWith("Other")) {
+    const key = await ask("OPENAI_API_KEY", server.key ? `API key for ${server.name}` : "API key, if your server needs one (Enter to skip)", true);
+    if (key) values.OPENAI_API_KEY = key;
+  }
+}
+if (choices.voice === "openai-compatible") {
+  values.TTS_BASE_URL = await answer("\nVoice server address (Kokoro-FastAPI default)", current.TTS_BASE_URL ?? "http://localhost:8880/v1");
+  values.TTS_VOICE = await answer("Voice (Kokoro: af_heart, af_bella, am_michael, bf_emma, bm_george…)", current.TTS_VOICE ?? "af_heart");
+}
 const keys = keysToAsk(choices);
 if (keys.length) console.log(`\nKeys for the APIs you picked. Paste each one; secrets aren't shown as you type.`);
 for (const k of keys) {

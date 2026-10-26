@@ -6,7 +6,7 @@ Status: **Phase 6**. The agent plans ideas, makes videos, waits for your approva
 
 ## Free, offline mode
 
-No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`. Ollama writes, Piper speaks, backgrounds are generated, and finished videos are exported for you to upload by hand. See [docs/local-mode.md](docs/local-mode.md).
+No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`. Ollama writes, Piper speaks, backgrounds are generated, and finished videos are exported for you to upload by hand. See [docs/local-mode.md](docs/local-mode.md). To use other open-source models (LM Studio, vLLM, llama.cpp, Groq, Together, OpenRouter) or Kokoro voices, see [docs/open-source-ai.md](docs/open-source-ai.md).
 
 ## Claude skills
 
@@ -22,8 +22,8 @@ npm run check          # shows what's configured and tests each credential
 
 | Step | Connect an API | Or run locally, free |
 | --- | --- | --- |
-| Writing | Claude | Ollama |
-| Voice | ElevenLabs | Piper |
+| Writing | Claude | Ollama, or any open-source model server (LM Studio, vLLM, llama.cpp, Groq, Together, OpenRouter) |
+| Voice | ElevenLabs | Piper, or Kokoro |
 | Footage | Pexels | your own clips, or generated backgrounds |
 | Posting | YouTube, Facebook and Instagram APIs | export files and upload by hand |
 

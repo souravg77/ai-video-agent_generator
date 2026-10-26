@@ -2,8 +2,8 @@ import type { Platform } from "./db.js";
 
 // What `npm run setup` asks: for each step, a free local tool or an API to connect.
 export type SetupChoices = {
-  writing: "claude" | "ollama";
-  voice: "elevenlabs" | "piper";
+  writing: "claude" | "ollama" | "openai-compatible";
+  voice: "elevenlabs" | "piper" | "openai-compatible";
   footage: "pexels" | "folder" | "generated";
   posting: "api" | "manual";
   platforms: Platform[];
@@ -15,10 +15,16 @@ export const STEP_OPTIONS = {
   writing: [
     { value: "claude", label: "Claude API (best scripts; pay per use)", needs: "ANTHROPIC_API_KEY from console.anthropic.com" },
     { value: "ollama", label: "Ollama on this computer (free, offline)", needs: "Ollama from ollama.com; about 16 GB RAM for the default model" },
+    {
+      value: "openai-compatible",
+      label: "Another open-source model server: LM Studio, vLLM, llama.cpp, or hosted open models (Groq, Together, OpenRouter)",
+      needs: "the server running, or an API key for a hosted one",
+    },
   ],
   voice: [
     { value: "elevenlabs", label: "ElevenLabs API (most natural voices; paid plan)", needs: "ELEVENLABS_API_KEY from elevenlabs.io" },
     { value: "piper", label: "Piper on this computer (free, offline)", needs: "Python 3; npm run local:setup installs it" },
+    { value: "openai-compatible", label: "Kokoro or another open-source voice server (free, more natural than Piper)", needs: "Kokoro-FastAPI running (Docker: docs/open-source-ai.md)" },
   ],
   footage: [
     { value: "pexels", label: "Pexels API (real stock footage; free key)", needs: "PEXELS_API_KEY from pexels.com/api" },
@@ -31,9 +37,20 @@ export const STEP_OPTIONS = {
   ],
 } as const satisfies { [K in keyof Omit<SetupChoices, "platforms">]: readonly SetupOption<SetupChoices[K]>[] };
 
+// Servers that speak the OpenAI chat API and run open models. The model is only an example; any model the server lists works.
+export const OPEN_MODEL_SERVERS = [
+  { name: "LM Studio (desktop app)", url: "http://localhost:1234/v1", key: false, model: "qwen3-14b", models: "the model id LM Studio shows under Developer" },
+  { name: "vLLM", url: "http://localhost:8000/v1", key: false, model: "Qwen/Qwen3-14B", models: "the model you started vLLM with" },
+  { name: "llama.cpp server", url: "http://localhost:8080/v1", key: false, model: "local", models: "any name; it serves the model it was started with" },
+  { name: "Groq (hosted)", url: "https://api.groq.com/openai/v1", key: true, model: "llama-3.3-70b-versatile", models: "console.groq.com/docs/models" },
+  { name: "Together AI (hosted)", url: "https://api.together.xyz/v1", key: true, model: "meta-llama/Llama-3.3-70B-Instruct-Turbo", models: "api.together.ai/models" },
+  { name: "OpenRouter (hosted)", url: "https://openrouter.ai/api/v1", key: true, model: "qwen/qwen3-235b-a22b", models: "openrouter.ai/models" },
+  { name: "Other (enter the address)", url: "", key: false, model: "", models: "your server's model list (GET /v1/models)" },
+] as const;
+
 // The .env settings for a set of choices. Every provider is written explicitly so the file says what was picked.
 export function envForChoices(c: SetupChoices): Record<string, string> {
-  const allLocal = c.writing === "ollama" && c.voice === "piper" && c.footage !== "pexels" && c.posting === "manual";
+  const allLocal = c.writing !== "claude" && c.voice !== "elevenlabs" && c.footage !== "pexels" && c.posting === "manual";
   return {
     AGENT_MODE: allLocal ? "local" : "cloud",
     LLM_PROVIDER: c.writing,

@@ -60,6 +60,8 @@ Start by reading the exact error, from the alert, the `videos.error` / `posts.er
 | Instagram can't fetch the video | `R2_PUBLIC_BASE_URL` is missing or not public. Open the URL in a browser to check |
 | "Can't reach Ollama" / "ollama pull" | Start `ollama serve`, or run `ollama pull $OLLAMA_MODEL` |
 | The local model's answer didn't match the format | Use a larger `OLLAMA_MODEL`, or raise `OLLAMA_CONTEXT` for long videos |
+| "Can't reach the model server" / "doesn't know the model" | Start the server, and check `OPENAI_BASE_URL` (ends in `/v1`) and `OPENAI_MODEL`. `npm run check` lists the models the server has |
+| "Can't reach the speech server" | Start Kokoro-FastAPI, or fix `TTS_BASE_URL` / `TTS_VOICE` |
 | Piper not found or voice missing | `npm run local:setup`, or set `PIPER_PATH` / `PIPER_VOICE` |
 | "No video clips in footage/" | Add clips, or set `VISUALS_PROVIDER=generated` |
 | Missing `PEXELS_API_KEY` / `ELEVENLABS_API_KEY` | Add the key, or switch that step to local with `npm run setup` |
