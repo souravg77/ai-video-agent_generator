@@ -59,8 +59,8 @@ ANTHROPIC_API_KEY=...
 
 | Setting | Values |
 | --- | --- |
-| `LLM_PROVIDER` | `claude`, `ollama` |
-| `TTS_PROVIDER` | `elevenlabs`, `piper` |
+| `LLM_PROVIDER` | `claude`, `ollama`, `openai-compatible` ([open-source-ai.md](open-source-ai.md)) |
+| `TTS_PROVIDER` | `elevenlabs`, `piper`, `openai-compatible` (Kokoro) |
 | `VISUALS_PROVIDER` | `pexels`, `folder`, `generated` |
 | `PUBLISH_MODE` | `api`, `manual` |
 

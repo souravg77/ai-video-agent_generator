@@ -19,8 +19,8 @@ const schema = z.object({
   // local = no paid APIs: Ollama for writing, Piper for voice, generated backgrounds, manual posting.
   // It only changes the defaults below; each setting can still be set on its own.
   AGENT_MODE: z.enum(["cloud", "local"]).default("cloud"),
-  LLM_PROVIDER: z.enum(["claude", "ollama"]).optional(),
-  TTS_PROVIDER: z.enum(["elevenlabs", "piper"]).optional(),
+  LLM_PROVIDER: z.enum(["claude", "ollama", "openai-compatible"]).optional(),
+  TTS_PROVIDER: z.enum(["elevenlabs", "piper", "openai-compatible"]).optional(),
   VISUALS_PROVIDER: z.enum(["pexels", "folder", "generated"]).optional(),
   PUBLISH_MODE: z.enum(["api", "manual"]).optional(),
 
@@ -31,6 +31,24 @@ const schema = z.object({
   OLLAMA_URL: z.string().default("http://localhost:11434"),
   OLLAMA_MODEL: z.string().default("qwen3:14b"),
   OLLAMA_CONTEXT: z.coerce.number().int().default(16384),
+
+  // Any open-source model server with an OpenAI-style API (LLM_PROVIDER=openai-compatible): LM Studio, vLLM,
+  // llama.cpp, LocalAI, or hosted open models (Groq, Together, OpenRouter). The key is only needed for hosted ones.
+  OPENAI_BASE_URL: z.string().default("http://localhost:1234/v1"),
+  OPENAI_API_KEY: optional,
+  OPENAI_MODEL: z.string().default("qwen3-14b"),
+  // schema = ask for the exact JSON schema; object = plain JSON mode for servers without schema support
+  OPENAI_JSON_MODE: z.enum(["schema", "object"]).default("schema"),
+  OPENAI_USD_PER_1M_INPUT: z.coerce.number().min(0).default(0),
+  OPENAI_USD_PER_1M_OUTPUT: z.coerce.number().min(0).default(0),
+
+  // Open-source voices through an OpenAI-style speech API (TTS_PROVIDER=openai-compatible),
+  // e.g. Kokoro-FastAPI (github.com/remsky/Kokoro-FastAPI) on port 8880
+  TTS_BASE_URL: z.string().default("http://localhost:8880/v1"),
+  TTS_API_KEY: optional,
+  TTS_MODEL: z.string().default("kokoro"),
+  TTS_VOICE: z.string().default("af_heart"),
+  TTS_SPEED: z.coerce.number().min(0.25).max(4).default(1),
 
   // Piper (free, offline text to speech): the voice model file (.onnx) and the piper command
   PIPER_VOICE: z.string().default("models/en_US-lessac-medium.onnx"),
@@ -134,8 +152,8 @@ const schema = z.object({
 });
 
 type Providers = {
-  LLM_PROVIDER: "claude" | "ollama";
-  TTS_PROVIDER: "elevenlabs" | "piper";
+  LLM_PROVIDER: "claude" | "ollama" | "openai-compatible";
+  TTS_PROVIDER: "elevenlabs" | "piper" | "openai-compatible";
   VISUALS_PROVIDER: "pexels" | "folder" | "generated";
   PUBLISH_MODE: "api" | "manual";
 };

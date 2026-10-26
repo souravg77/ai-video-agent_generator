@@ -13,8 +13,8 @@ const results: Result[] = [];
 
 // Services the chosen providers replace aren't needed.
 const replaced = new Set<string>([
-  ...(config.LLM_PROVIDER === "ollama" ? ["Claude API"] : []),
-  ...(config.TTS_PROVIDER === "piper" ? ["Voice (ElevenLabs)"] : []),
+  ...(config.LLM_PROVIDER !== "claude" ? ["Claude API"] : []),
+  ...(config.TTS_PROVIDER !== "elevenlabs" ? ["Voice (ElevenLabs)"] : []),
   ...(config.VISUALS_PROVIDER !== "pexels" ? ["Stock footage (Pexels)"] : []),
   ...(config.PUBLISH_MODE === "manual" ? ["Storage (R2)", "YouTube", "Facebook Page", "Instagram"] : []),
 ]);
@@ -80,6 +80,44 @@ if (config.LLM_PROVIDER === "ollama") {
     r.detail = r.ok ? `${config.OLLAMA_MODEL} ready` : `${config.OLLAMA_MODEL} not downloaded; run \`ollama pull ${config.OLLAMA_MODEL}\``;
   } catch {
     r.detail = `not reachable at ${config.OLLAMA_URL}; install it from ollama.com and run \`ollama serve\``;
+  }
+}
+
+const auth = (key?: string): Record<string, string> => (key ? { authorization: `Bearer ${key}` } : {});
+
+if (config.LLM_PROVIDER === "openai-compatible") {
+  const base = config.OPENAI_BASE_URL.replace(/\/$/, "");
+  const r: Result = { name: "Model server", ok: false, detail: "" };
+  results.push(r);
+  try {
+    const res = await fetch(`${base}/models`, { headers: auth(config.OPENAI_API_KEY) });
+    if (res.status === 401 || res.status === 403) r.detail = `${base} refused the key; check OPENAI_API_KEY`;
+    else if (!res.ok) r.detail = `${base}/models returned ${res.status}; check OPENAI_BASE_URL (it usually ends in /v1)`;
+    else {
+      const ids = (((await res.json()) as { data?: { id: string }[] }).data ?? []).map((m) => m.id);
+      // llama.cpp serves its one model whatever name is asked for, so a single-model server always passes.
+      r.ok = ids.includes(config.OPENAI_MODEL) || ids.length <= 1;
+      r.detail = r.ok ? `${config.OPENAI_MODEL} at ${base}` : `${base} doesn't have ${config.OPENAI_MODEL}. Set OPENAI_MODEL to one of: ${ids.slice(0, 8).join(", ")}`;
+    }
+  } catch {
+    r.detail = `not reachable at ${base}; start the server or fix OPENAI_BASE_URL`;
+  }
+}
+
+if (config.TTS_PROVIDER === "openai-compatible") {
+  const base = config.TTS_BASE_URL.replace(/\/$/, "");
+  const r: Result = { name: "Voice server", ok: false, detail: "" };
+  results.push(r);
+  try {
+    const res = await fetch(`${base}/audio/speech`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...auth(config.TTS_API_KEY) },
+      body: JSON.stringify({ model: config.TTS_MODEL, voice: config.TTS_VOICE, input: "Test.", response_format: "mp3" }),
+    });
+    r.ok = res.ok;
+    r.detail = res.ok ? `voice ${config.TTS_VOICE} at ${base}` : `${base} returned ${res.status}: ${(await res.text()).slice(0, 120)}`;
+  } catch {
+    r.detail = `not reachable at ${base}; start Kokoro-FastAPI (docs/open-source-ai.md) or fix TTS_BASE_URL`;
   }
 }
 

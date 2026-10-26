@@ -4,6 +4,9 @@
 #   docker compose exec ollama ollama pull qwen3:14b      (once; several GB)
 #   docker compose exec agent npm run local:setup -- --no-env   (once; downloads the Piper voice into models/)
 # With an NVIDIA GPU, uncomment the deploy block below to make writing much faster.
+# Open-source Kokoro voices: add COMPOSE_PROFILES=kokoro and TTS_PROVIDER=openai-compatible,
+# TTS_BASE_URL=http://kokoro:8880/v1 to .env (docs/open-source-ai.md).
+# A model server on the host itself (LM Studio, vLLM): OPENAI_BASE_URL=http://host.docker.internal:<port>/v1
 services:
   agent:
     build:
@@ -16,6 +19,8 @@ services:
     volumes:
       - ./models:/app/models
       - ./footage:/app/footage
+    extra_hosts:
+      - host.docker.internal:host-gateway
     depends_on:
       ollama:
         condition: service_started
@@ -32,6 +37,11 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
+
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    profiles: [kokoro]
+    restart: unless-stopped
 
 volumes:
   ollama:

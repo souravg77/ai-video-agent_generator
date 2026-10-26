@@ -20,6 +20,8 @@ If the repo isn't in the working directory, clone it first. Read `README.md`, `.
 | Posting | exported to `out/ready/`, uploaded by hand | YouTube and Meta APIs, automatic |
 | Guide | `docs/local-mode.md` | `docs/phase0-setup.md` |
 
+Other open-source options (`docs/open-source-ai.md`): `LLM_PROVIDER=openai-compatible` for LM Studio, vLLM, llama.cpp or hosted open models (Groq, Together, OpenRouter), and `TTS_PROVIDER=openai-compatible` for Kokoro voices.
+
 The two can be mixed per step with `LLM_PROVIDER`, `TTS_PROVIDER`, `VISUALS_PROVIDER` and `PUBLISH_MODE`. A common mix is everything local except `PUBLISH_MODE=api` once the platform apps are approved.
 
 Never automate posting through a browser or unofficial tools. It breaks the platforms' terms and gets accounts banned. Automatic posting goes through the official APIs only.
