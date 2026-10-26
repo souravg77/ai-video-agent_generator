@@ -6,7 +6,7 @@ Every AI step can run on open-source models, on your own machine or on a host th
 | --- | --- | --- |
 | Writing (ideas, scripts, translations, comment drafts) | Ollama, LM Studio, vLLM, llama.cpp, LocalAI; or hosted open models on Groq, Together AI, OpenRouter, DeepInfra | `LLM_PROVIDER=ollama` or `openai-compatible` |
 | Voice | Piper (offline, light); Kokoro through Kokoro-FastAPI (more natural); any server with an OpenAI-style speech API | `TTS_PROVIDER=piper` or `openai-compatible` |
-| Footage | Generated backgrounds, or your own clips | `VISUALS_PROVIDER=generated` or `folder` |
+| Footage | Generated backgrounds; your own clips; or a real AI image per scene from FLUX/SDXL on your GPU | `VISUALS_PROVIDER=generated`, `folder` or `generated-local` |
 
 Ollama and Piper are covered in [local-mode.md](local-mode.md). This page covers the rest.
 
@@ -55,6 +55,45 @@ TTS_SPEED=1
 ```
 
 The same settings work with any other server that has an OpenAI-style `/audio/speech` endpoint, such as LocalAI or openedai-speech. Use `TTS_API_KEY` if the server needs one.
+
+## Footage with a local image model (FLUX / SDXL)
+
+`VISUALS_PROVIDER=generated-local` makes a **real AI image for each scene** on your
+own GPU — a FLUX or SDXL picture of what the scene describes — and animates it
+with a slow zoom/pan (Ken Burns), instead of downloading stock footage or using
+the plain gradient backgrounds. No API, no per-image cost.
+
+It talks to any server with an OpenAI-style `/v1/images/generations` endpoint:
+
+```sh
+VISUALS_PROVIDER=generated-local
+IMAGE_BASE_URL=http://localhost:8080/v1    # where the image server listens; ends in /v1
+IMAGE_MODEL=flux.1-schnell                 # a model the server has
+IMAGE_API_KEY=                             # only if the server needs one
+# IMAGE_SIZE=832x1216                      # optional; blank = a portrait/landscape default
+```
+
+| Server | Runs | Notes |
+| --- | --- | --- |
+| [LocalAI](https://localai.io) | FLUX, SDXL, Stable Diffusion | OpenAI image API built in; easiest all-in-one |
+| [SwarmUI](https://github.com/mcmonkeyprojects/SwarmUI) | ComfyUI underneath | Enable its OpenAI-compatible API |
+| [openedai-images](https://github.com/matatonic/openedai-images) | a backend you point it at | A thin `/v1/images/generations` shim |
+| [ComfyUI](https://github.com/comfyanonymous/ComfyUI) | FLUX, SDXL | Use behind one of the shims above (its native API is a node graph, not OpenAI-style) |
+
+**Which model?** [FLUX.1 [schnell]](https://huggingface.co/black-forest-labs/FLUX.1-schnell)
+(Apache-2.0) gives the best quality for the least fuss and runs on a normal gaming
+GPU (~8–12 GB VRAM). SDXL or SDXL-Turbo are lighter fallbacks. A short video makes
+one image per scene, so generation time is a few seconds per scene on a decent GPU.
+
+`IMAGE_SIZE` must be a size your model supports (FLUX and SDXL like sizes near one
+megapixel, in multiples of 32). The image is upscaled and cropped to the video
+frame, so the exact aspect ratio need not match. Set `IMAGE_USD_PER_IMAGE` only if
+you run a hosted image API and want it in the cost tracking; a local server is free.
+
+> **Moving footage, not stills:** true local text-to-video (LTX-Video, CogVideoX,
+> Wan) needs a strong GPU and is not wired in here. The still-image path above is
+> the practical "runs on a normal PC" option; combine it with `GENERATED_CLIPS=hook`
+> (fal.ai) if you want a generated *motion* clip for the opening scene.
 
 ## On Intel graphics
 

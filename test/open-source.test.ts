@@ -16,9 +16,13 @@ Object.assign(process.env, {
   TTS_PROVIDER: "openai-compatible",
   TTS_BASE_URL: "http://kokoro.test:8880/v1",
   TTS_VOICE: "bf_emma",
+  VISUALS_PROVIDER: "generated-local",
+  IMAGE_BASE_URL: "http://images.test:8080/v1/",
+  IMAGE_MODEL: "flux.1-schnell",
 });
 const { askJson, openai } = await import("../src/lib/llm.js");
 const { synthesizeVoice, speech } = await import("../src/pipeline/voice.js");
+const { fetchVisual, imageApi } = await import("../src/pipeline/visuals.js");
 const { envForChoices, keysToAsk, OPEN_MODEL_SERVERS } = await import("../src/lib/setup-choices.js");
 const { z } = await import("zod/v4");
 
@@ -102,4 +106,45 @@ test("setup: open-source choices need no paid keys and count as local", () => {
   assert.equal(env.LLM_PROVIDER, "openai-compatible");
   assert.deepEqual(keysToAsk({ ...c, platforms: ["youtube"] }), []);
   assert.ok(OPEN_MODEL_SERVERS.every((s) => !s.url || s.url.endsWith("/v1")));
+});
+
+test("setup: local AI footage counts as local and needs no paid keys", () => {
+  const c = { writing: "ollama", voice: "piper", footage: "generated-local", posting: "manual", platforms: ["youtube"] } as const;
+  const env = envForChoices({ ...c, platforms: ["youtube"] });
+  assert.equal(env.AGENT_MODE, "local");
+  assert.equal(env.VISUALS_PROVIDER, "generated-local");
+  assert.deepEqual(keysToAsk({ ...c, platforms: ["youtube"] }), []);
+});
+
+test("local AI footage: calls the image endpoint and animates the still into a scene-length clip", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "localfootage-"));
+  // A real PNG for the server to "generate", made with ffmpeg.
+  const png = join(dir, "src.png");
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=832x1216:d=1", "-frames:v", "1", png]);
+  const b64 = (await readFile(png)).toString("base64");
+
+  let sent: any;
+  imageApi.fetch = async (url, init) => {
+    sent = { url, body: JSON.parse(String(init?.body)) };
+    return Response.json({ data: [{ b64_json: b64 }] });
+  };
+  const out = join(dir, "visual-0.mp4");
+  await fetchVisual("ancient roman marketplace", out, 4.2, { sceneIndex: 0, format: "short" });
+
+  assert.equal(sent.url, "http://images.test:8080/v1/images/generations");
+  assert.equal(sent.body.model, "flux.1-schnell");
+  assert.equal(sent.body.n, 1);
+  assert.equal(sent.body.size, "832x1216");
+  assert.match(sent.body.prompt, /ancient roman marketplace/);
+
+  // A 1080x1920, ~4.2s h264 clip, and the temporary source image is cleaned up.
+  const info = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,codec_name:format=duration", "-of", "json", out], { encoding: "utf8" }));
+  assert.equal(info.streams[0].width, 1080);
+  assert.equal(info.streams[0].height, 1920);
+  assert.equal(info.streams[0].codec_name, "h264");
+  assert.ok(Math.abs(Number(info.format.duration) - 4.2) < 0.2, `duration ${info.format.duration}`);
+  assert.deepEqual(await readdir(dir), ["src.png", "visual-0.mp4"]);
+
+  imageApi.fetch = async () => new Response("model not found", { status: 404 });
+  await assert.rejects(fetchVisual("x", join(dir, "bad.mp4"), 2, { sceneIndex: 0, format: "short" }), /404: model not found\. Check IMAGE_MODEL/);
 });

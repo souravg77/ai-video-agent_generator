@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { copyFile, readdir, writeFile } from "node:fs/promises";
+import { copyFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { config } from "../config.js";
 import { ffmpeg } from "../lib/ffmpeg.js";
@@ -40,6 +40,64 @@ export async function generatedBackground(outPath: string, seconds: number, form
   ]);
 }
 
+// Animates a still image into a `seconds`-long clip with a slow Ken Burns zoom/pan.
+// Alternates zoom-in and zoom-out by scene so consecutive scenes don't feel identical.
+async function kenBurnsClip(imgPath: string, outPath: string, seconds: number, format: VideoFormat, sceneIndex: number): Promise<void> {
+  const { width: W, height: H } = FRAME[format];
+  const frames = Math.max(1, Math.round(seconds * 30));
+  const rate = (0.2 / frames).toFixed(6); // zoom across ~1.0–1.2 over the clip
+  const z = sceneIndex % 2 === 0 ? `min(1+${rate}*on,1.2)` : `max(1.2-${rate}*on,1.0)`;
+  await ffmpeg([
+    "-loop", "1", "-framerate", "30", "-t", seconds.toFixed(3), "-i", imgPath,
+    "-vf",
+    `scale=${W * 2}:${H * 2}:force_original_aspect_ratio=increase,crop=${W * 2}:${H * 2},` +
+      `zoompan=z='${z}':d=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=${W}x${H}:fps=30,` +
+      `setsar=1,format=yuv420p`,
+    "-c:v", "libx264", "-preset", "medium", "-crf", "20", "-an", outPath,
+  ]);
+}
+
+// Overridable so tests can stand in for the image server.
+export const imageApi = { fetch: (input: string, init?: RequestInit) => fetch(input, init) };
+
+// Generates a still for one scene from an OpenAI-style image server (FLUX/SDXL on your own
+// GPU via LocalAI, SwarmUI, openedai-images, …) and animates it into a clip. No API, no cost.
+export async function generateLocalVisual(query: string, outPath: string, seconds: number, format: VideoFormat, sceneIndex: number): Promise<void> {
+  const base = config.IMAGE_BASE_URL.replace(/\/$/, "");
+  const size = config.IMAGE_SIZE || (format === "short" ? "832x1216" : "1216x832");
+  const prompt = `${query}, cinematic photograph, realistic, highly detailed, natural lighting, ${format === "short" ? "vertical" : "horizontal"} composition`;
+  let res: Response;
+  try {
+    res = await imageApi.fetch(`${base}/images/generations`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(config.IMAGE_API_KEY ? { authorization: `Bearer ${config.IMAGE_API_KEY}` } : {}) },
+      body: JSON.stringify({ model: config.IMAGE_MODEL, prompt, n: 1, size, response_format: "b64_json" }),
+    });
+  } catch (err) {
+    throw new Error(`Can't reach the image server at ${base} (${(err as Error).message}). Is it running, and is IMAGE_BASE_URL right? See docs/open-source-ai.md.`);
+  }
+  if (!res.ok) throw new Error(`The image server returned ${res.status}: ${(await res.text()).slice(0, 300)}. Check IMAGE_MODEL and that it serves /images/generations.`);
+  const data = (await res.json()) as { data?: { b64_json?: string; url?: string }[] };
+  const first = data.data?.[0];
+  if (!first) throw new Error(`The image server returned no image for "${query}".`);
+
+  let buf: Buffer;
+  if (first.b64_json) buf = Buffer.from(first.b64_json, "base64");
+  else if (first.url) {
+    const dl = await imageApi.fetch(first.url);
+    if (!dl.ok) throw new Error(`Downloading the generated image failed (${dl.status}).`);
+    buf = Buffer.from(await dl.arrayBuffer());
+  } else throw new Error("The image server returned neither image data nor a URL.");
+
+  const imgPath = outPath.replace(/\.mp4$/i, "") + ".src.png";
+  await writeFile(imgPath, buf);
+  try {
+    await kenBurnsClip(imgPath, outPath, seconds, format, sceneIndex);
+  } finally {
+    await rm(imgPath, { force: true });
+  }
+}
+
 const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv)$/i;
 const words = (s: string) => new Set(s.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2));
 
@@ -73,6 +131,7 @@ export async function fetchVisual(
     return;
   }
   if (config.VISUALS_PROVIDER === "generated") return generatedBackground(outPath, minSeconds, format, opts.sceneIndex ?? 0);
+  if (config.VISUALS_PROVIDER === "generated-local") return generateLocalVisual(query, outPath, minSeconds, format, opts.sceneIndex ?? 0);
   if (config.VISUALS_PROVIDER === "folder") {
     const clip = await pickFromFolder(query, config.FOOTAGE_DIR, opts.usedFiles ?? new Set());
     await copyFile(clip, outPath);

@@ -21,7 +21,7 @@ const schema = z.object({
   AGENT_MODE: z.enum(["cloud", "local"]).default("cloud"),
   LLM_PROVIDER: z.enum(["claude", "ollama", "openai-compatible"]).optional(),
   TTS_PROVIDER: z.enum(["elevenlabs", "piper", "openai-compatible"]).optional(),
-  VISUALS_PROVIDER: z.enum(["pexels", "folder", "generated"]).optional(),
+  VISUALS_PROVIDER: z.enum(["pexels", "folder", "generated", "generated-local"]).optional(),
   PUBLISH_MODE: z.enum(["api", "manual"]).optional(),
 
   ANTHROPIC_API_KEY: optional,
@@ -56,6 +56,18 @@ const schema = z.object({
 
   // Your own clips for VISUALS_PROVIDER=folder; file names are matched to each scene's search words
   FOOTAGE_DIR: z.string().default("footage"),
+
+  // Local AI footage (VISUALS_PROVIDER=generated-local): generate a still per scene from an
+  // OpenAI-style image server (LocalAI, SwarmUI, openedai-images, or ComfyUI behind a shim)
+  // running FLUX or SDXL, then animate it with a slow zoom/pan. Runs on your own GPU — no API,
+  // no per-image cost. See docs/open-source-ai.md.
+  IMAGE_BASE_URL: z.string().default("http://localhost:8080/v1"),
+  IMAGE_API_KEY: optional,
+  IMAGE_MODEL: z.string().default("flux.1-schnell"),
+  // Size the server generates at (then upscaled/cropped to the video frame). Blank = a
+  // portrait/landscape size FLUX and SDXL handle well. Must be ones your model supports.
+  IMAGE_SIZE: optional,
+  IMAGE_USD_PER_IMAGE: z.coerce.number().min(0).default(0),
 
   ELEVENLABS_API_KEY: optional,
   ELEVENLABS_VOICE_ID: z.string().default("21m00Tcm4TlvDq8ikWAM"),
@@ -157,7 +169,7 @@ const schema = z.object({
 type Providers = {
   LLM_PROVIDER: "claude" | "ollama" | "openai-compatible";
   TTS_PROVIDER: "elevenlabs" | "piper" | "openai-compatible";
-  VISUALS_PROVIDER: "pexels" | "folder" | "generated";
+  VISUALS_PROVIDER: "pexels" | "folder" | "generated" | "generated-local";
   PUBLISH_MODE: "api" | "manual";
 };
 export type Config = Omit<z.infer<typeof schema>, "OUT_DIR" | keyof Providers> & { OUT_DIR: string } & Providers;
