@@ -24,6 +24,7 @@ your own certificate (see [the build notes](../installer/windows/README.md)).
 | Shortcut | What it does |
 | --- | --- |
 | **AI Video Agent - Setup** | Re-run setup to connect services or switch a step to a free local tool |
+| **AI Video Agent - Local Setup (free mode)** | Install Ollama and Piper (offering winget) and download the free model and voice |
 | **AI Video Agent - Make a Video** | Type a topic and get a finished video in the `out\` folder |
 | **AI Video Agent - Start Agent** | Run the agent and open the review page at http://localhost:3000 |
 | **Open Review Page** | Open http://localhost:3000 in your browser |
@@ -37,9 +38,10 @@ Finished videos are saved under `%LOCALAPPDATA%\Programs\AI Video Agent\app\out`
 - **Not included (optional):**
   - **Full agent on a schedule** needs a Postgres database. Use a free local or
     hosted one and set `DATABASE_URL`; see [hosting.md](hosting.md).
-  - **Free local mode** (no paid APIs) needs Ollama and Piper. Install
-    [Ollama](https://ollama.com/download) and Python 3, then run
-    `local:setup` from the app folder; see [local-mode.md](local-mode.md).
+  - **Free local mode** (no paid APIs) needs Ollama and Piper. If you pick the
+    free tools during setup, run the **Local Setup (free mode)** shortcut — it
+    offers to install Ollama and Python 3 with winget, then downloads the model
+    and voice. See [local-mode.md](local-mode.md).
 
 ## Uninstall
 

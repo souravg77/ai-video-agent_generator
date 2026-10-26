@@ -45,6 +45,7 @@ Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ig
 
 [Icons]
 Name: "{group}\AI Video Agent - Setup"; Filename: "{app}\setup.cmd"; WorkingDir: "{app}"; Comment: "Connect services or pick free local tools"
+Name: "{group}\AI Video Agent - Local Setup (free mode)"; Filename: "{app}\local-setup.cmd"; WorkingDir: "{app}"; Comment: "Install Ollama and Piper and download the free model and voice"
 Name: "{group}\AI Video Agent - Make a Video"; Filename: "{app}\make-video.cmd"; WorkingDir: "{app}"; Comment: "Turn a topic into a finished video"
 Name: "{group}\AI Video Agent - Start Agent"; Filename: "{app}\start-agent.cmd"; WorkingDir: "{app}"; Comment: "Run the agent and open the review page"
 Name: "{group}\Open Review Page"; Filename: "{app}\open-review.cmd"; WorkingDir: "{app}"

@@ -10,7 +10,7 @@ with no prerequisites for the end user. End-user instructions are in
 | --- | --- |
 | `build.ps1` | Downloads a portable Node.js and static FFmpeg, runs `npm ci`, lays out `payload\`, then compiles the installer |
 | `ai-video-agent.iss` | Inno Setup script: files, shortcuts, per-user install, uninstall cleanup |
-| `launchers\*.cmd` | The scripts the Start-menu shortcuts point to; they put the bundled Node and FFmpeg on `PATH` |
+| `launchers\*.cmd` | The scripts the Start-menu shortcuts point to; they put the bundled Node and FFmpeg on `PATH`. `local-setup.cmd` also offers to install Ollama/Python with winget for free mode |
 
 The build produces, under `payload\`:
 
