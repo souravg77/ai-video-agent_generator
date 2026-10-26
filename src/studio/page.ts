@@ -125,6 +125,7 @@ export function renderStudioPage(): string {
       <p>Type a topic, make a video — all in this window.</p>
     </div>
     <span class="spacer"></span>
+    <a class="pill btn" id="updChip" hidden target="_blank" rel="noopener" style="border-color:var(--accent);color:var(--accent);text-decoration:none;font-weight:600"></a>
     <button class="btn" id="settingsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 7 2.6h.1A1.6 1.6 0 0 0 9 1.1V1a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7"/></svg>Settings</button>
   </header>
 
@@ -180,6 +181,12 @@ export function renderStudioPage(): string {
     <div><label class="fld" for="k_pexels">Pexels — PEXELS_API_KEY</label><input type="password" id="k_pexels" placeholder="..." autocomplete="off"></div>
     <button class="btn primary" id="saveSettings" style="justify-content:center">Save</button>
     <p class="hint" id="settingsNote" hidden></p>
+    <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label class="fld">App updates</label>
+      <div class="hint" style="margin:0 0 8px">Current version: <span class="mono" id="curVer">…</span></div>
+      <button class="btn" id="checkUpd" type="button">Check for updates</button>
+      <div class="hint" id="updResult" style="margin-top:8px"></div>
+    </div>
   </div>
 </dialog>
 
@@ -355,6 +362,38 @@ export function renderStudioPage(): string {
       }).catch(function () {});
   }
 
+  // ---- updates (GitHub Releases) ----
+  function renderUpdate(u) {
+    if ($("curVer")) $("curVer").textContent = u.current || "—";
+    var chip = $("updChip");
+    if (u.updateAvailable && u.latest) {
+      chip.textContent = "⬆ Update " + u.latest;
+      chip.href = u.assetUrl || u.url;
+      chip.hidden = false;
+    } else {
+      chip.hidden = true;
+    }
+  }
+  function loadUpdate(showResult) {
+    fetch("/api/update").then(function (r) { return r.json(); }).then(function (u) {
+      renderUpdate(u);
+      var box = $("updResult");
+      if (!showResult || !box) return;
+      box.textContent = "";
+      if (u.updateAvailable && u.latest) {
+        var span = document.createElement("span"); span.textContent = "Update ";
+        var b = document.createElement("b"); b.textContent = u.latest; span.appendChild(b);
+        span.appendChild(document.createTextNode(" is available. "));
+        var a = document.createElement("a"); a.textContent = "Download"; a.href = u.assetUrl || u.url; a.target = "_blank"; a.rel = "noopener";
+        box.appendChild(span); box.appendChild(a);
+      } else if (u.note) {
+        box.textContent = u.note;
+      } else {
+        box.textContent = "You're on the latest version (" + u.current + ").";
+      }
+    }).catch(function () { if (showResult && $("updResult")) $("updResult").textContent = "Couldn't check for updates."; });
+  }
+
   // ---- wire up ----
   $("formatSeg").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
@@ -366,8 +405,9 @@ export function renderStudioPage(): string {
   $("settingsBtn").addEventListener("click", function () { $("settingsDlg").showModal(); });
   $("closeSettings").addEventListener("click", function () { $("settingsDlg").close(); });
   $("saveSettings").addEventListener("click", saveSettings);
+  $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
 
-  loadStatus(); loadLibrary();
+  loadStatus(); loadLibrary(); loadUpdate(false);
 })();
 </script>
 </body>

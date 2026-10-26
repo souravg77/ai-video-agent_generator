@@ -187,6 +187,64 @@ async function pullModel(res: ServerResponse): Promise<void> {
   }
 }
 
+// ---- In-app update check against GitHub Releases ---------------------------
+const UPDATE_REPO = process.env.GITHUB_REPO || "souravg77/ai-video-agent_generator";
+
+async function appVersion(): Promise<string> {
+  try {
+    const v = (await readFile(join(process.cwd(), "VERSION"), "utf8")).trim(); // written by build.ps1
+    if (v) return v;
+  } catch {}
+  try {
+    const v = (JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as { version?: string }).version;
+    if (v) return v;
+  } catch {}
+  return "dev";
+}
+
+function verParts(v: string): number[] {
+  return (v || "").replace(/^v/i, "").split(/[.\-+]/).map((n) => parseInt(n, 10)).filter((n) => !Number.isNaN(n));
+}
+function isNewer(latest: string, current: string): boolean {
+  const a = verParts(latest);
+  const b = verParts(current);
+  if (!a.length) return false;
+  if (!b.length) return true; // current unknown ("dev") — offer the latest
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return false;
+}
+
+// Asks GitHub for the latest release. Runs on the user's machine, so it reaches
+// github.com directly. Returns the current/latest versions and a download link.
+async function updateInfo() {
+  const current = await appVersion();
+  try {
+    const res = await fetch(`https://api.github.com/repos/${UPDATE_REPO}/releases/latest`, {
+      headers: { accept: "application/vnd.github+json", "user-agent": "sgain-studio" },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (res.status === 404) return { current, latest: null, updateAvailable: false, note: "No releases published yet." };
+    if (!res.ok) return { current, latest: null, updateAvailable: false, note: `GitHub returned ${res.status}.` };
+    const r = (await res.json()) as { tag_name?: string; html_url?: string; assets?: { name: string; browser_download_url: string }[] };
+    const latest = r.tag_name ?? null;
+    const asset = (r.assets ?? []).find((a) => a.name.toLowerCase().endsWith(".exe"));
+    const releaseUrl = r.html_url ?? `https://github.com/${UPDATE_REPO}/releases/latest`;
+    return {
+      current,
+      latest,
+      updateAvailable: latest ? isNewer(latest, current) : false,
+      url: releaseUrl,
+      assetUrl: asset?.browser_download_url ?? releaseUrl,
+    };
+  } catch {
+    return { current, latest: null, updateAvailable: false, note: "Couldn't reach GitHub to check for updates." };
+  }
+}
+
 async function listVideos() {
   const root = config.OUT_DIR;
   if (!existsSync(root)) return [];
@@ -285,6 +343,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   if (req.method === "GET" && p === "/api/videos") {
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify(await listVideos()));
+  }
+  if (req.method === "GET" && p === "/api/update") {
+    res.writeHead(200, { "content-type": "application/json" });
+    return void res.end(JSON.stringify(await updateInfo()));
   }
   if (req.method === "GET" && p === "/api/pull-model") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });

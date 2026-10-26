@@ -123,6 +123,8 @@ try {
 Write-Host "==> Adding launchers"
 Copy-Item -Path (Join-Path $here "launchers\*.cmd") -Destination $payload -Force
 Copy-Item -Path (Join-Path $here "launchers\*.vbs") -Destination $payload -Force
+# Record the build version so S.Gain Studio can check GitHub Releases for updates.
+Set-Content -Path (Join-Path $appDst "VERSION") -Value $AppVersion -NoNewline -Encoding ASCII
 
 # ---- 5. Compile the installer ----------------------------------------------
 $isccPath = Resolve-Iscc $Iscc
