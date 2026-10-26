@@ -56,6 +56,63 @@ TTS_SPEED=1
 
 The same settings work with any other server that has an OpenAI-style `/audio/speech` endpoint, such as LocalAI or openedai-speech. Use `TTS_API_KEY` if the server needs one.
 
+## On Intel graphics
+
+Intel GPUs run open models well through **Vulkan**, with llama.cpp underneath. Point the agent at it with `LLM_PROVIDER=openai-compatible`. Don't use Ollama on Intel graphics: its standard build mostly falls back to the CPU there.
+
+**How big a model:**
+
+| Intel graphics | Memory for the model | Model size that fits | Examples |
+| --- | --- | --- | --- |
+| Integrated (Iris Xe, Arc in Core Ultra laptops) | Shared with system RAM; 16 GB RAM or more recommended | 7–8B, 4-bit | Qwen3 8B, Llama 3.1 8B |
+| Arc A750 / A580 (8 GB) | 8 GB | 7–8B, 4-bit | Qwen3 8B, Gemma 3 4B |
+| Arc B580 (12 GB) | 12 GB | up to 14B, 4-bit | Qwen3 14B, Gemma 3 12B |
+| Arc A770 (16 GB) | 16 GB | up to 14B, 4–6-bit | Qwen3 14B, Gemma 3 12B |
+
+Use GGUF files with `Q4_K_M` in the name; they are a good balance of size and quality. Approve the first videos yourself, because 8B models break the script format more often than 14B ones.
+
+### Easiest: LM Studio (Windows or Linux desktop)
+
+1. Install [LM Studio](https://lmstudio.ai). Under **Settings → Runtime**, choose the **Vulkan** llama.cpp runtime.
+2. Download a model, for example Qwen3 8B, Q4_K_M. Load it with **GPU offload** set to the maximum.
+3. Under **Developer**, start the server.
+4. Run `npm run setup`, pick **Another open-source model server**, then **LM Studio**, and type the model id LM Studio shows.
+
+### On Ubuntu: llama.cpp with Vulkan
+
+Install the Intel Vulkan driver and check that the GPU shows up:
+
+```bash
+sudo apt install -y mesa-vulkan-drivers vulkan-tools
+vulkaninfo --summary | grep -i deviceName    # should list your Intel GPU
+```
+
+Put a GGUF model in `~/models`, then run llama.cpp's server in Docker with the GPU passed through:
+
+```bash
+docker run -d --name llama --restart unless-stopped \
+  --device /dev/dri -v ~/models:/models -p 8080:8080 \
+  ghcr.io/ggml-org/llama.cpp:server-vulkan \
+  -m /models/Qwen3-8B-Q4_K_M.gguf -ngl 99 -c 16384 --host 0.0.0.0 --port 8080
+```
+
+`-ngl 99` puts every layer on the GPU, and `-c 16384` is the context size. Then set:
+
+```bash
+LLM_PROVIDER=openai-compatible
+OPENAI_BASE_URL=http://localhost:8080/v1                # the agent running directly on the machine
+# OPENAI_BASE_URL=http://host.docker.internal:8080/v1   # the agent in Docker (docker-compose.local.yml)
+OPENAI_MODEL=local
+```
+
+`docker logs llama` should mention Vulkan and your Intel GPU. If it only mentions the CPU, the driver or `/dev/dri` passthrough isn't working.
+
+Intel's own [OpenVINO Model Server](https://docs.openvino.ai/2025/model-server/ovms_what_is_openvino_model_server.html) also serves an OpenAI-style API and can be faster on Intel hardware, but it takes more setup. The same `openai-compatible` settings work with it.
+
+Kokoro voices run fine on the CPU, so the voice setup above doesn't change.
+
+Most rented servers have no Intel GPU, so this is for your own PC or mini PC. If the agent runs somewhere else, connect the two over a private network such as Tailscale. llama.cpp's server has no password, so never open port 8080 to the internet.
+
 ## In Docker
 
 With `docker-compose.local.yml`, add these lines to `.env` to run Kokoro next to the agent:
