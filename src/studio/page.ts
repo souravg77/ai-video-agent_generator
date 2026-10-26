@@ -113,6 +113,18 @@ export function renderStudioPage(): string {
   .dlg-head h3 { margin:0; font-size:16px; }
   .dlg-body { padding:16px 20px 20px; display:flex; flex-direction:column; gap:14px; }
   .hint { color:var(--muted); font-size:12.5px; }
+  .mono { font-family:var(--mono); }
+
+  .drop { border:1.5px dashed var(--line); border-radius:12px; background:var(--panel-2); padding:22px 14px; text-align:center; color:var(--muted); cursor:pointer; font-size:13.5px; }
+  .drop:hover, .drop.over { border-color:var(--accent); color:var(--fg-2); }
+  .drop svg { width:22px; height:22px; display:block; margin:0 auto 8px; opacity:.8; }
+  .thumbs { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .thumb-item { position:relative; width:62px; height:84px; border-radius:8px; overflow:hidden; border:1px solid var(--line); background:#000; }
+  .thumb-item img { width:100%; height:100%; object-fit:cover; display:block; }
+  .thumb-item button { position:absolute; top:2px; right:2px; width:19px; height:19px; border-radius:50%; border:0; background:rgba(0,0,0,.66); color:#fff; font-size:13px; line-height:1; cursor:pointer; display:grid; place-items:center; padding:0; }
+  .rec-dot { width:9px; height:9px; border-radius:50%; background:var(--bad); display:inline-block; animation:pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.25; } }
+  audio { width:100%; margin-top:10px; }
   [hidden]{ display:none !important; }
 </style>
 </head>
@@ -168,6 +180,43 @@ export function renderStudioPage(): string {
     </div>
   </div>
 
+  <h2 class="sec">Make from your own photos &amp; voice</h2>
+  <div class="card">
+    <p class="hint" style="margin:0 0 16px; font-size:13px; line-height:1.55">
+      Turn 1–4 of your photos into a video narrated by your own voice — record it here or upload an audio file.
+      Fully offline: no topic, no AI writing. The photos become a gentle zoom/pan slideshow timed to your voice-over.
+      <b>Experimental:</b> set <span class="mono">AVATAR_CMD</span> to a local talking-head tool to animate the first photo to the voice instead.
+    </p>
+    <div class="grid">
+      <div>
+        <label class="fld">Your photos (1–4)</label>
+        <div class="drop" id="photoDrop" tabindex="0" role="button" aria-label="Add photos">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
+          Click to add photos, or drop them here
+        </div>
+        <input type="file" id="photoInput" accept="image/*" multiple hidden>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+      <div>
+        <label class="fld">Voice-over</label>
+        <div class="row" style="margin-top:0">
+          <button class="btn" id="recBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Record</button>
+          <button class="btn" id="audioBtn" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0-12 4 4m-4-4-4 4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Upload audio</button>
+          <input type="file" id="audioInput" accept="audio/*" hidden>
+        </div>
+        <audio id="voicePreview" controls hidden></audio>
+        <div class="hint" id="voiceStatus" style="margin-top:10px">No voice-over yet.</div>
+      </div>
+    </div>
+    <div class="row">
+      <input type="text" id="photoTitle" placeholder="Title (optional)" autocomplete="off" style="flex:1">
+      <button class="btn primary" id="photoMakeBtn" style="justify-content:center">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9z"/></svg> Make photo video
+      </button>
+    </div>
+    <div class="console" id="photoConsole" style="margin-top:14px"><span class="empty">Add photos and a voice-over, then press Make photo video.</span></div>
+  </div>
+
   <h2 class="sec">Your videos</h2>
   <div class="lib" id="library"><span class="empty">No videos yet.</span></div>
 </div>
@@ -198,13 +247,14 @@ export function renderStudioPage(): string {
   var busy = false;
 
   function el(line, cls) { var s = document.createElement("span"); s.className = "l" + (cls ? " " + cls : ""); s.textContent = line; return s; }
-  function clearConsole() { $("console").innerHTML = ""; }
-  function log(line, cls) {
-    var c = $("console");
+  function logTo(consoleId, line, cls) {
+    var c = $(consoleId);
     if (c.querySelector(".empty")) c.innerHTML = "";
     c.appendChild(el(line, cls));
     c.scrollTop = c.scrollHeight;
   }
+  function clearConsole() { $("console").innerHTML = ""; }
+  function log(line, cls) { logTo("console", line, cls); }
 
   // ---- status ----
   function loadStatus() {
@@ -394,6 +444,104 @@ export function renderStudioPage(): string {
     }).catch(function () { if (showResult && $("updResult")) $("updResult").textContent = "Couldn't check for updates."; });
   }
 
+  // ---- photos & voice ----
+  var REC_MIC = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg> Record';
+  var photos = [];   // data URLs, up to 4
+  var voice = null;  // data URL of the voice-over
+  var mediaRec = null, recChunks = [], recStream = null, recTimer = null, recStart = 0;
+  var photoBusy = false;
+
+  function readFileData(file) {
+    return new Promise(function (resolve, reject) {
+      var fr = new FileReader();
+      fr.onload = function () { resolve(fr.result); };
+      fr.onerror = function () { reject(new Error("Couldn't read that file.")); };
+      fr.readAsDataURL(file);
+    });
+  }
+  function renderThumbs() {
+    var t = $("thumbs"); t.innerHTML = "";
+    photos.forEach(function (p, i) {
+      var d = document.createElement("div"); d.className = "thumb-item";
+      var img = document.createElement("img"); img.src = p; d.appendChild(img);
+      var x = document.createElement("button"); x.type = "button"; x.textContent = "\\u00d7"; x.title = "Remove";
+      x.addEventListener("click", function () { photos.splice(i, 1); renderThumbs(); });
+      d.appendChild(x); t.appendChild(d);
+    });
+  }
+  function addPhotos(files) {
+    var list = Array.prototype.slice.call(files || []).filter(function (f) { return /^image\\//.test(f.type); });
+    if (!list.length) return;
+    var room = 4 - photos.length;
+    if (room <= 0) { logTo("photoConsole", "You already have 4 photos — remove one to add another.", null); return; }
+    if (list.length > room) logTo("photoConsole", "Only the first " + room + " photo(s) were added (max 4).", null);
+    list.slice(0, room).forEach(function (f) {
+      readFileData(f).then(function (d) { if (photos.length < 4) { photos.push(d); renderThumbs(); } });
+    });
+  }
+  function setVoice(dataUrl, label) {
+    voice = dataUrl;
+    var a = $("voicePreview"); a.src = dataUrl; a.hidden = false;
+    $("voiceStatus").textContent = label;
+  }
+  function resetRecBtn() { var b = $("recBtn"); b.classList.remove("primary"); b.innerHTML = REC_MIC; }
+  function toggleRec() {
+    if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === "undefined") {
+      $("voiceStatus").textContent = "Recording isn't available in this window — use Upload audio instead."; return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+      recStream = stream; recChunks = [];
+      mediaRec = new MediaRecorder(stream);
+      mediaRec.ondataavailable = function (e) { if (e.data && e.data.size) recChunks.push(e.data); };
+      mediaRec.onstop = function () {
+        if (recTimer) { clearInterval(recTimer); recTimer = null; }
+        if (recStream) recStream.getTracks().forEach(function (t) { t.stop(); });
+        var secs = (Date.now() - recStart) / 1000;
+        var blob = new Blob(recChunks, { type: (mediaRec && mediaRec.mimeType) || "audio/webm" });
+        readFileData(blob).then(function (d) { setVoice(d, "Recorded voice-over (" + fmtDur(secs) + ")."); });
+        resetRecBtn();
+      };
+      mediaRec.start();
+      recStart = Date.now();
+      var b = $("recBtn"); b.classList.add("primary"); b.innerHTML = '<span class="rec-dot"></span> Stop (0s)';
+      recTimer = setInterval(function () {
+        $("recBtn").innerHTML = '<span class="rec-dot"></span> Stop (' + Math.round((Date.now() - recStart) / 1000) + 's)';
+      }, 500);
+    }).catch(function () { $("voiceStatus").textContent = "Microphone permission was denied — use Upload audio instead."; });
+  }
+  function photoFinish(btn, orig) { photoBusy = false; btn.disabled = false; btn.innerHTML = orig; }
+  function photoMake() {
+    if (photoBusy) return;
+    if (!photos.length) { logTo("photoConsole", "Add at least one photo.", "err"); return; }
+    if (!voice) { logTo("photoConsole", "Record or upload a voice-over first.", "err"); return; }
+    photoBusy = true;
+    var btn = $("photoMakeBtn"); var orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Working…';
+    $("photoConsole").innerHTML = "";
+    logTo("photoConsole", "Building your photo video from " + photos.length + " photo(s)…");
+    fetch("/api/photo-video", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ images: photos, audio: voice, title: $("photoTitle").value.trim(), format: format })
+    }).then(function (r) { return r.json(); }).then(function (res) {
+      if (res.error) throw new Error(res.error);
+      var es = new EventSource("/api/jobs/" + res.id + "/events");
+      es.addEventListener("log", function (e) { logTo("photoConsole", JSON.parse(e.data)); });
+      es.addEventListener("done", function (e) {
+        var d = JSON.parse(e.data);
+        logTo("photoConsole", "Done — " + d.title + "  (" + fmtDur(d.durationSec) + ")", "ok");
+        es.close(); photoFinish(btn, orig);
+        if (d.name) play(d.name, d.title, d.durationSec);
+        loadLibrary();
+      });
+      es.addEventListener("error", function (e) {
+        var msg = "The server closed the connection.";
+        try { if (e.data) msg = JSON.parse(e.data).message; } catch (x) {}
+        logTo("photoConsole", "Failed: " + msg, "err"); es.close(); photoFinish(btn, orig);
+      });
+    }).catch(function (err) { logTo("photoConsole", "Failed: " + err.message, "err"); photoFinish(btn, orig); });
+  }
+
   // ---- wire up ----
   $("formatSeg").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
@@ -406,6 +554,21 @@ export function renderStudioPage(): string {
   $("closeSettings").addEventListener("click", function () { $("settingsDlg").close(); });
   $("saveSettings").addEventListener("click", saveSettings);
   $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
+
+  $("photoDrop").addEventListener("click", function () { $("photoInput").click(); });
+  $("photoDrop").addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("photoInput").click(); } });
+  $("photoDrop").addEventListener("dragover", function (e) { e.preventDefault(); this.classList.add("over"); });
+  $("photoDrop").addEventListener("dragleave", function () { this.classList.remove("over"); });
+  $("photoDrop").addEventListener("drop", function (e) { e.preventDefault(); this.classList.remove("over"); if (e.dataTransfer) addPhotos(e.dataTransfer.files); });
+  $("photoInput").addEventListener("change", function () { addPhotos(this.files); this.value = ""; });
+  $("recBtn").addEventListener("click", toggleRec);
+  $("audioBtn").addEventListener("click", function () { $("audioInput").click(); });
+  $("audioInput").addEventListener("change", function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    readFileData(f).then(function (d) { setVoice(d, f.name); });
+    this.value = "";
+  });
+  $("photoMakeBtn").addEventListener("click", photoMake);
 
   loadStatus(); loadLibrary(); loadUpdate(false);
 })();

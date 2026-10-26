@@ -42,7 +42,10 @@ Finished videos are saved under `%LOCALAPPDATA%\Programs\AI Video Agent\app\out`
 agent's local server with no console window and opens it as an app window (using
 Microsoft Edge's app mode, which is built into Windows 11; it falls back to your
 default browser). You type a topic, press **Make video**, watch the progress, and
-play the result — no command prompt at any point. **Piper** (voice) is bundled and
+play the result — no command prompt at any point. You can also make a video from
+**your own photos and voice** (record or upload a voice-over) in the same
+window — see [avatar-voice.md](avatar-voice.md), which also covers the
+experimental talking-avatar and voice-cloning hooks. **Piper** (voice) is bundled and
 **Ollama** (writing) is downloaded during installation; both run inside the app,
 and the writing model is downloaded on first launch from the banner, with a
 progress bar. The **Setup**, **Start Agent** and other shortcuts are still there
