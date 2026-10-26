@@ -6,7 +6,7 @@ import { join, resolve, sep } from "node:path";
 import { config } from "../config.js";
 import { makeVideo } from "../pipeline/index.js";
 import { writeEnv } from "../lib/env-file.js";
-import { renderStudioPage } from "./page.js";
+import { renderStudioPage, STUDIO_LOGO } from "./page.js";
 
 // A tiny local web app that drives the make-a-video pipeline from a window, so
 // Windows users never touch a console. No database is required: videos are
@@ -137,6 +137,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     return void res.end(renderStudioPage());
   }
   if (req.method === "GET" && p === "/health") return void res.end("ok");
+  if (req.method === "GET" && p === "/favicon.svg") {
+    res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "max-age=86400" });
+    return void res.end(STUDIO_LOGO);
+  }
   if (req.method === "GET" && p === "/api/status") {
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify(status()));

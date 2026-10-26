@@ -2,13 +2,29 @@
 // progress, and play the result. Self-contained (system fonts, inline CSS/JS) so
 // it works offline with no outside requests.
 
+// The S.Gain Studio logo (an "S" with a play triangle). Used in the header and
+// served as the window favicon.
+export const STUDIO_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<defs>
+<linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6d5cff"/><stop offset=".55" stop-color="#5b7cff"/><stop offset="1" stop-color="#17a2ff"/></linearGradient>
+<linearGradient id="ls" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".18"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
+</defs>
+<rect x="16" y="16" width="224" height="224" rx="54" fill="url(#lg)"/>
+<rect x="16" y="16" width="224" height="224" rx="54" fill="url(#ls)"/>
+<text x="112" y="140" text-anchor="middle" dominant-baseline="central" font-family="Arial, 'Liberation Sans', 'DejaVu Sans', sans-serif" font-size="176" font-weight="800" fill="#fff">S</text>
+<circle cx="178" cy="186" r="34" fill="#fff"/>
+<path d="M169 169 l26 17 -26 17 z" fill="#5b6cff"/>
+</svg>`;
+
 export function renderStudioPage(): string {
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Video Agent Studio</title>
+<title>S.Gain Studio</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/favicon.svg">
 <style>
   :root {
     --bg:#0c0f15; --panel:#151a22; --panel-2:#1b212b; --line:#273040;
@@ -22,8 +38,8 @@ export function renderStudioPage(): string {
   body { margin:0; background:var(--bg); color:var(--fg); font-family:var(--sans); font-size:15px; line-height:1.5; }
   .wrap { max-width:1060px; margin:0 auto; padding:0 20px 60px; }
   header { display:flex; align-items:center; gap:14px; padding:22px 0 16px; }
-  .logo { width:40px; height:40px; border-radius:11px; background:linear-gradient(140deg,var(--accent),#17a2ff); display:grid; place-items:center; flex:none; box-shadow:0 6px 20px -6px rgba(109,92,255,.5); }
-  .logo svg { width:22px; height:22px; color:#fff; }
+  .logo { width:44px; height:44px; flex:none; filter:drop-shadow(0 6px 16px rgba(109,92,255,.45)); display:grid; place-items:center; }
+  .logo svg { width:44px; height:44px; display:block; }
   header h1 { font-size:19px; margin:0; font-weight:650; letter-spacing:-.02em; }
   header p { margin:0; color:var(--muted); font-size:13px; }
   header .spacer { margin-left:auto; }
@@ -89,9 +105,9 @@ export function renderStudioPage(): string {
 <body>
 <div class="wrap">
   <header>
-    <div class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v2l4-2v10l-4-2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></div>
+    <div class="logo">${STUDIO_LOGO}</div>
     <div>
-      <h1>AI Video Agent Studio</h1>
+      <h1>S.Gain Studio</h1>
       <p>Type a topic, make a video — all in this window.</p>
     </div>
     <span class="spacer"></span>
