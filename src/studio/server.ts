@@ -116,8 +116,20 @@ async function probeVoice(): Promise<Probe> {
   return { ready: true }; // openai-compatible voice (Kokoro): assume reachable
 }
 
+async function probeImageServer(): Promise<Probe> {
+  const base = config.IMAGE_BASE_URL.replace(/\/$/, "");
+  try {
+    // Any HTTP reply (even 401/404) means the image server is reachable.
+    await fetch(`${base}/models`, { signal: AbortSignal.timeout(1500), headers: config.IMAGE_API_KEY ? { authorization: `Bearer ${config.IMAGE_API_KEY}` } : {} });
+    return { ready: true };
+  } catch {
+    return { ready: false, reason: `The image server isn't reachable at ${config.IMAGE_BASE_URL} — start your FLUX/SDXL server (see docs/open-source-ai.md), or switch footage to Generated.` };
+  }
+}
+
 async function probeFootage(): Promise<Probe> {
   if (config.VISUALS_PROVIDER === "generated") return { ready: true };
+  if (config.VISUALS_PROVIDER === "generated-local") return probeImageServer();
   if (config.VISUALS_PROVIDER === "pexels") return config.PEXELS_API_KEY ? { ready: true } : { ready: false, reason: "No Pexels key — add PEXELS_API_KEY in Settings, or switch footage to Generated." };
   if (!existsSync(config.FOOTAGE_DIR)) return { ready: false, reason: `No footage folder (${config.FOOTAGE_DIR}) — add clips, or switch footage to Generated.` };
   const files = (await readdir(config.FOOTAGE_DIR, { recursive: true })).map(String).filter((f) => /\.(mp4|mov|m4v|webm|mkv)$/i.test(f));
