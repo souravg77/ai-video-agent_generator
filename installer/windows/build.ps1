@@ -70,20 +70,8 @@ New-Item -ItemType Directory -Force -Path $ffBinDst | Out-Null
 Copy-Item (Join-Path $ffBinSrc.DirectoryName "ffmpeg.exe")  $ffBinDst -Force
 Copy-Item (Join-Path $ffBinSrc.DirectoryName "ffprobe.exe") $ffBinDst -Force
 
-# ---- 2b. Portable Ollama (runs the writing model locally) -------------------
-# Bundled so free mode works with no separate install; S.Gain Studio starts it
-# and downloads the model on first run. The model itself is NOT bundled.
-Write-Host "==> Downloading Ollama (portable)"
-$ollamaZip = Join-Path $work "ollama.zip"
-Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile $ollamaZip
-$ollamaDst = Join-Path $payload "runtime\ollama"
-New-Item -ItemType Directory -Force -Path $ollamaDst | Out-Null
-Expand-Archive -Path $ollamaZip -DestinationPath $ollamaDst -Force
-if (-not (Test-Path (Join-Path $ollamaDst "ollama.exe"))) {
-  $oexe = Get-ChildItem -Path $ollamaDst -Recurse -Filter "ollama.exe" | Select-Object -First 1
-  if (-not $oexe) { throw "ollama.exe not found in the Ollama archive." }
-  Copy-Item (Join-Path $oexe.DirectoryName "*") $ollamaDst -Recurse -Force   # flatten to runtime\ollama\ollama.exe
-}
+# Ollama is NOT bundled (it is ~1.5 GB) — the installer downloads it at install
+# time with fetch-ollama.ps1, which keeps the installer small.
 
 # ---- 2c. Portable Piper (voice) + a default voice --------------------------
 Write-Host "==> Downloading Piper (portable)"
