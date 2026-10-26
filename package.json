@@ -19,6 +19,7 @@
     "post:youtube": "tsx scripts/post-youtube.ts",
     "post": "tsx scripts/post.ts",
     "agent": "tsx scripts/agent.ts",
+    "studio": "tsx scripts/studio.ts",
     "agent:add": "tsx scripts/agent-add.ts",
     "agents": "tsx scripts/agents.ts",
     "stats": "tsx scripts/stats.ts",

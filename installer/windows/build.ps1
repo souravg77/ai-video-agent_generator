@@ -90,6 +90,7 @@ try {
 # ---- 4. Launchers at the install root --------------------------------------
 Write-Host "==> Adding launchers"
 Copy-Item -Path (Join-Path $here "launchers\*.cmd") -Destination $payload -Force
+Copy-Item -Path (Join-Path $here "launchers\*.vbs") -Destination $payload -Force
 
 # ---- 5. Compile the installer ----------------------------------------------
 $isccPath = Resolve-Iscc $Iscc

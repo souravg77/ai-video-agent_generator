@@ -11,9 +11,10 @@ app and its dependencies — so you don't install anything else first.
    page.
 2. Double-click it. It installs per-user (no administrator prompt) to
    `%LOCALAPPDATA%\Programs\AI Video Agent`.
-3. Leave **Run first-time setup now** ticked and finish. Setup asks, for each
-   step, whether to connect a paid API or use a free local tool, saves your
-   choices to `.env`, and tests every credential.
+3. Finish. **S.Gain Studio** opens in its own window (no console) — type
+   a topic and press **Make video**. With no keys yet it makes an offline sample;
+   add your keys under **Settings**, or run **Setup** for the full guided setup
+   (free local tools or paid APIs), which saves to `.env` and tests every credential.
 
 Windows SmartScreen may warn about an unrecognised app because the installer
 isn't code-signed. Choose **More info → Run anyway**, or sign the build with
@@ -23,6 +24,7 @@ your own certificate (see [the build notes](../installer/windows/README.md)).
 
 | Shortcut | What it does |
 | --- | --- |
+| **S.Gain Studio** | The main app window — type a topic, make a video, watch it, all in one window with no console |
 | **AI Video Agent - Setup** | Re-run setup to connect services or switch a step to a free local tool |
 | **AI Video Agent - Local Setup (free mode)** | Install Ollama and Piper (offering winget) and download the free model and voice |
 | **AI Video Agent - Make a Video** | Type a topic and get a finished video in the `out\` folder |
@@ -30,6 +32,16 @@ your own certificate (see [the build notes](../installer/windows/README.md)).
 | **Open Review Page** | Open http://localhost:3000 in your browser |
 
 Finished videos are saved under `%LOCALAPPDATA%\Programs\AI Video Agent\app\out`.
+
+## The app window
+
+**S.Gain Studio** is the main way to use the app on Windows. It starts the
+agent's local server with no console window and opens it as an app window (using
+Microsoft Edge's app mode, which is built into Windows 11; it falls back to your
+default browser). You type a topic, press **Make video**, watch the progress, and
+play the result — no command prompt at any point. The **Setup**, **Local Setup**,
+**Start Agent** and other shortcuts are still there for the full agent, posting and
+free-mode tools.
 
 ## What the installer does and doesn't include
 
