@@ -66,6 +66,9 @@ export function renderStudioPage(): string {
   .banner li { margin:4px 0; color:var(--fg-2); }
   .banner .hint { color:var(--muted); font-size:12.5px; }
   .banner .hint b { color:var(--fg-2); }
+  .pbar { height:8px; border-radius:999px; background:var(--panel-2); overflow:hidden; margin:6px 0 4px; }
+  .pbar > i { display:block; height:100%; width:0; background:var(--accent); border-radius:999px; transition:width .2s ease; }
+  .phint { font-family:var(--mono); font-size:11.5px; color:var(--muted); }
 
   .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
@@ -122,6 +125,7 @@ export function renderStudioPage(): string {
       <p>Type a topic, make a video — all in this window.</p>
     </div>
     <span class="spacer"></span>
+    <a class="pill btn" id="updChip" hidden target="_blank" rel="noopener" style="border-color:var(--accent);color:var(--accent);text-decoration:none;font-weight:600"></a>
     <button class="btn" id="settingsBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 7 2.6h.1A1.6 1.6 0 0 0 9 1.1V1a2 2 0 1 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7"/></svg>Settings</button>
   </header>
 
@@ -177,6 +181,12 @@ export function renderStudioPage(): string {
     <div><label class="fld" for="k_pexels">Pexels — PEXELS_API_KEY</label><input type="password" id="k_pexels" placeholder="..." autocomplete="off"></div>
     <button class="btn primary" id="saveSettings" style="justify-content:center">Save</button>
     <p class="hint" id="settingsNote" hidden></p>
+    <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label class="fld">App updates</label>
+      <div class="hint" style="margin:0 0 8px">Current version: <span class="mono" id="curVer">…</span></div>
+      <button class="btn" id="checkUpd" type="button">Check for updates</button>
+      <div class="hint" id="updResult" style="margin-top:8px"></div>
+    </div>
   </div>
 </dialog>
 
@@ -223,8 +233,18 @@ export function renderStudioPage(): string {
         var ul = document.createElement("ul");
         keys.forEach(function (k) { var li = document.createElement("li"); li.textContent = s.reasons[k]; ul.appendChild(li); });
         banner.appendChild(ul);
+        if (s.pullModel) {
+          var pb = document.createElement("div");
+          pb.innerHTML =
+            '<button class="btn primary" id="pullBtn" style="margin:2px 0 4px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Download ' + s.model + ' now</button>' +
+            '<div id="pullProg" hidden><div class="pbar"><i id="pbarFill"></i></div><div class="phint" id="pstatus"></div></div>';
+          banner.appendChild(pb);
+          pb.querySelector("#pullBtn").addEventListener("click", function () { startPull(this); });
+        }
         var hint = document.createElement("span"); hint.className = "hint";
-        hint.innerHTML = 'Run the <b>Local Setup (free mode)</b> shortcut to install Ollama and Piper, or open <b>Settings</b> to add API keys. Then press <b>Re-check</b>.';
+        hint.innerHTML = s.pullModel
+          ? 'The app runs Ollama and Piper for you — this is a one-time model download inside the app. Or open <b>Settings</b> to use cloud APIs instead.'
+          : 'The app sets up Ollama and Piper automatically — give it a moment and press <b>Re-check</b>, or open <b>Settings</b> to add API keys.';
         banner.appendChild(hint);
         banner.hidden = false;
       } else {
@@ -298,6 +318,35 @@ export function renderStudioPage(): string {
     $("makeBtn").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9z"/></svg> Make video';
   }
 
+  // Download the Ollama writing model inside the app, with a live progress bar.
+  function startPull(btn) {
+    var finished = false;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Downloading…';
+    var prog = $("pullProg"); if (prog) prog.hidden = false;
+    var es = new EventSource("/api/pull-model");
+    es.addEventListener("progress", function (e) {
+      var d = JSON.parse(e.data);
+      if ($("pstatus")) $("pstatus").textContent = d.status + (d.percent != null ? " — " + d.percent + "%" : "");
+      if (d.percent != null && $("pbarFill")) $("pbarFill").style.width = d.percent + "%";
+    });
+    es.addEventListener("done", function () {
+      finished = true; es.close();
+      if ($("pbarFill")) $("pbarFill").style.width = "100%";
+      if ($("pstatus")) $("pstatus").textContent = "Downloaded. Checking…";
+      loadStatus();
+    });
+    es.addEventListener("error", function (e) {
+      if (finished) return;
+      var msg = null; try { if (e.data) msg = JSON.parse(e.data).message; } catch (x) {}
+      if (!msg && es.readyState !== 2) return; // transient; EventSource will retry
+      finished = true; es.close();
+      if ($("pstatus")) $("pstatus").textContent = msg || "Download interrupted.";
+      btn.disabled = false;
+      btn.innerHTML = "Retry download";
+    });
+  }
+
   // ---- settings ----
   function saveSettings() {
     var body = {
@@ -313,6 +362,38 @@ export function renderStudioPage(): string {
       }).catch(function () {});
   }
 
+  // ---- updates (GitHub Releases) ----
+  function renderUpdate(u) {
+    if ($("curVer")) $("curVer").textContent = u.current || "—";
+    var chip = $("updChip");
+    if (u.updateAvailable && u.latest) {
+      chip.textContent = "⬆ Update " + u.latest;
+      chip.href = u.assetUrl || u.url;
+      chip.hidden = false;
+    } else {
+      chip.hidden = true;
+    }
+  }
+  function loadUpdate(showResult) {
+    fetch("/api/update").then(function (r) { return r.json(); }).then(function (u) {
+      renderUpdate(u);
+      var box = $("updResult");
+      if (!showResult || !box) return;
+      box.textContent = "";
+      if (u.updateAvailable && u.latest) {
+        var span = document.createElement("span"); span.textContent = "Update ";
+        var b = document.createElement("b"); b.textContent = u.latest; span.appendChild(b);
+        span.appendChild(document.createTextNode(" is available. "));
+        var a = document.createElement("a"); a.textContent = "Download"; a.href = u.assetUrl || u.url; a.target = "_blank"; a.rel = "noopener";
+        box.appendChild(span); box.appendChild(a);
+      } else if (u.note) {
+        box.textContent = u.note;
+      } else {
+        box.textContent = "You're on the latest version (" + u.current + ").";
+      }
+    }).catch(function () { if (showResult && $("updResult")) $("updResult").textContent = "Couldn't check for updates."; });
+  }
+
   // ---- wire up ----
   $("formatSeg").addEventListener("click", function (e) {
     var b = e.target.closest("button"); if (!b) return;
@@ -324,8 +405,9 @@ export function renderStudioPage(): string {
   $("settingsBtn").addEventListener("click", function () { $("settingsDlg").showModal(); });
   $("closeSettings").addEventListener("click", function () { $("settingsDlg").close(); });
   $("saveSettings").addEventListener("click", saveSettings);
+  $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
 
-  loadStatus(); loadLibrary();
+  loadStatus(); loadLibrary(); loadUpdate(false);
 })();
 </script>
 </body>

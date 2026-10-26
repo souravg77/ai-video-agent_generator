@@ -70,6 +70,38 @@ New-Item -ItemType Directory -Force -Path $ffBinDst | Out-Null
 Copy-Item (Join-Path $ffBinSrc.DirectoryName "ffmpeg.exe")  $ffBinDst -Force
 Copy-Item (Join-Path $ffBinSrc.DirectoryName "ffprobe.exe") $ffBinDst -Force
 
+# ---- 2b. Portable Ollama (runs the writing model locally) -------------------
+# Bundled so free mode works with no separate install; S.Gain Studio starts it
+# and downloads the model on first run. The model itself is NOT bundled.
+Write-Host "==> Downloading Ollama (portable)"
+$ollamaZip = Join-Path $work "ollama.zip"
+Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile $ollamaZip
+$ollamaDst = Join-Path $payload "runtime\ollama"
+New-Item -ItemType Directory -Force -Path $ollamaDst | Out-Null
+Expand-Archive -Path $ollamaZip -DestinationPath $ollamaDst -Force
+if (-not (Test-Path (Join-Path $ollamaDst "ollama.exe"))) {
+  $oexe = Get-ChildItem -Path $ollamaDst -Recurse -Filter "ollama.exe" | Select-Object -First 1
+  if (-not $oexe) { throw "ollama.exe not found in the Ollama archive." }
+  Copy-Item (Join-Path $oexe.DirectoryName "*") $ollamaDst -Recurse -Force   # flatten to runtime\ollama\ollama.exe
+}
+
+# ---- 2c. Portable Piper (voice) + a default voice --------------------------
+Write-Host "==> Downloading Piper (portable)"
+$piperZip = Join-Path $work "piper.zip"
+Invoke-WebRequest -Uri "https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_windows_amd64.zip" -OutFile $piperZip
+Expand-Archive -Path $piperZip -DestinationPath (Join-Path $work "piper") -Force
+$piperExe = Get-ChildItem -Path (Join-Path $work "piper") -Recurse -Filter "piper.exe" | Select-Object -First 1
+if (-not $piperExe) { throw "piper.exe not found in the Piper archive." }
+$piperDst = Join-Path $payload "runtime\piper"
+New-Item -ItemType Directory -Force -Path $piperDst | Out-Null
+Copy-Item (Join-Path $piperExe.DirectoryName "*") $piperDst -Recurse -Force
+Write-Host "==> Downloading a Piper voice"
+$voiceDir = Join-Path $piperDst "voices"
+New-Item -ItemType Directory -Force -Path $voiceDir | Out-Null
+$voiceUrl = "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx"
+Invoke-WebRequest -Uri $voiceUrl        -OutFile (Join-Path $voiceDir "en_US-lessac-medium.onnx")
+Invoke-WebRequest -Uri "$voiceUrl.json" -OutFile (Join-Path $voiceDir "en_US-lessac-medium.onnx.json")
+
 # ---- 3. App sources + dependencies -----------------------------------------
 Write-Host "==> Copying app sources"
 $appDst = Join-Path $payload "app"
@@ -91,6 +123,8 @@ try {
 Write-Host "==> Adding launchers"
 Copy-Item -Path (Join-Path $here "launchers\*.cmd") -Destination $payload -Force
 Copy-Item -Path (Join-Path $here "launchers\*.vbs") -Destination $payload -Force
+# Record the build version so S.Gain Studio can check GitHub Releases for updates.
+Set-Content -Path (Join-Path $appDst "VERSION") -Value $AppVersion -NoNewline -Encoding ASCII
 
 # ---- 5. Compile the installer ----------------------------------------------
 $isccPath = Resolve-Iscc $Iscc

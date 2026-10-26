@@ -45,6 +45,9 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 ; The S.Gain Studio logo, used by the shortcuts and the uninstaller.
 Source: "sgain-studio.ico"; DestDir: "{app}"; Flags: ignoreversion
+; A starter .env so a fresh install defaults to free local mode. Never overwrites
+; an existing one (so Setup's choices and re-installs are preserved).
+Source: "default.env"; DestDir: "{app}\app"; DestName: ".env"; Flags: onlyifdoesntexist
 
 [Icons]
 Name: "{group}\S.Gain Studio"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\sgain-studio.ico"; Comment: "Make videos in an app window (no console)"
@@ -64,3 +67,5 @@ Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; Description: 
 Type: filesandordirs; Name: "{app}\app\node_modules"
 Type: filesandordirs; Name: "{app}\app\out"
 Type: files; Name: "{app}\app\.env"
+; Downloaded Ollama models live here (OLLAMA_MODELS points into the app).
+Type: filesandordirs; Name: "{app}\models"

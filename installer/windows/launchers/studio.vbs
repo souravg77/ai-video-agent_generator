@@ -4,7 +4,7 @@
 ' browser if Edge isn't found. Run by wscript.exe, so nothing flashes on screen.
 Option Explicit
 
-Dim fso, sh, root, app, nodeDir, ffDir, env, url, i, up, http, edge
+Dim fso, sh, root, app, nodeDir, ffDir, ollamaDir, piperDir, voice, modelsDir, env, url, i, up, http, edge
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set sh  = CreateObject("WScript.Shell")
 
@@ -20,6 +20,23 @@ env("PATH")         = nodeDir & ";" & ffDir & ";" & env("PATH")
 env("FFMPEG_PATH")  = ffDir & "\ffmpeg.exe"
 env("FFPROBE_PATH") = ffDir & "\ffprobe.exe"
 env("STUDIO_PORT")  = "4321"
+
+' Bundled Ollama (writing) and Piper (voice) for free local mode.
+ollamaDir = root & "\runtime\ollama"
+piperDir  = root & "\runtime\piper"
+voice     = piperDir & "\voices\en_US-lessac-medium.onnx"
+modelsDir = root & "\models\ollama"
+If fso.FolderExists(ollamaDir) Then env("PATH") = ollamaDir & ";" & env("PATH")
+If fso.FolderExists(piperDir) Then
+  env("PATH") = piperDir & ";" & env("PATH")
+  If fso.FileExists(piperDir & "\piper.exe") Then env("PIPER_PATH") = piperDir & "\piper.exe"
+  If fso.FileExists(voice) Then env("PIPER_VOICE") = voice
+End If
+' Keep downloaded models inside the app folder so uninstall removes them.
+If Not fso.FolderExists(root & "\models") Then fso.CreateFolder(root & "\models")
+If Not fso.FolderExists(modelsDir) Then fso.CreateFolder(modelsDir)
+env("OLLAMA_MODELS") = modelsDir
+
 sh.CurrentDirectory = app
 
 ' Start the Studio server hidden (window style 0), don't wait. If it's already
