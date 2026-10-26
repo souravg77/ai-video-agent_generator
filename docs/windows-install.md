@@ -1,10 +1,9 @@
 # Windows 11: one-click install
 
-A single `.exe` installs the complete AI Video Agent on Windows 11. It bundles
-everything for free local mode — Node.js, FFmpeg, **Ollama** and **Piper**, plus
-the app and its dependencies — so you don't install anything else. On first
-launch S.Gain Studio downloads the writing model (a one-time download, inside
-the app).
+A single `.exe` installs the AI Video Agent on Windows 11. It bundles Node.js,
+FFmpeg, **Piper** and the app, and **downloads Ollama during installation** (a
+tickbox you can skip) so the installer stays small. On first launch S.Gain
+Studio downloads the writing model (a one-time download, inside the app).
 
 ## Install
 
@@ -43,19 +42,23 @@ Finished videos are saved under `%LOCALAPPDATA%\Programs\AI Video Agent\app\out`
 agent's local server with no console window and opens it as an app window (using
 Microsoft Edge's app mode, which is built into Windows 11; it falls back to your
 default browser). You type a topic, press **Make video**, watch the progress, and
-play the result — no command prompt at any point. **Ollama** (writing) and
-**Piper** (voice) are bundled and run inside the app; the writing model is
-downloaded on first launch from the banner, with a progress bar. The **Setup**,
-**Start Agent** and other shortcuts are still there for the full agent and posting.
+play the result — no command prompt at any point. **Piper** (voice) is bundled and
+**Ollama** (writing) is downloaded during installation; both run inside the app,
+and the writing model is downloaded on first launch from the banner, with a
+progress bar. The **Setup**, **Start Agent** and other shortcuts are still there
+for the full agent and posting.
 
 ## What the installer does and doesn't include
 
-- **Included:** Node.js, FFmpeg, **Ollama** and **Piper** (with a voice), and the
-  app and all its dependencies. Free local mode works out of the box — S.Gain
-  Studio starts Ollama and downloads the writing model on first launch.
+- **Included (bundled):** Node.js, FFmpeg, **Piper** (with a voice), and the app
+  and all its dependencies.
+- **Downloaded during installation:** **Ollama** (about 1 GB) — a tickbox on the
+  install screen, so the `.exe` itself stays small. Untick it if you'll use cloud
+  APIs or want to install Ollama later (the **Local Setup** shortcut can fetch it).
+- **Downloaded on first launch:** the **writing model** (about 9 GB for
+  `qwen3:14b`), from the Studio window with a progress bar. An **Offline sample**
+  needs nothing.
 - **Not included:**
-  - **The writing model** (about 9 GB for `qwen3:14b`) is downloaded once, on
-    first launch, from the Studio window. An **Offline sample** needs nothing.
   - **Cloud quality** (Claude, ElevenLabs, Pexels) needs API keys — paste them in
     **Settings**, or run **Setup**.
   - **The agent on a schedule** needs a Postgres database (`DATABASE_URL`); see

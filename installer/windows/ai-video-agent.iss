@@ -39,6 +39,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"
+Name: "getollama"; Description: "Download Ollama now for free local mode (about 1 GB; needs internet)"; GroupDescription: "Free local mode:"
 
 [Files]
 ; payload\ is assembled by build.ps1 (app\, runtime\node\, runtime\ffmpeg\, launchers).
@@ -48,6 +49,8 @@ Source: "sgain-studio.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; A starter .env so a fresh install defaults to free local mode. Never overwrites
 ; an existing one (so Setup's choices and re-installs are preserved).
 Source: "default.env"; DestDir: "{app}\app"; DestName: ".env"; Flags: onlyifdoesntexist
+; Downloads a portable Ollama at install time (keeps the installer small).
+Source: "fetch-ollama.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\S.Gain Studio"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\sgain-studio.ico"; Comment: "Make videos in an app window (no console)"
@@ -60,6 +63,8 @@ Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\S.Gain Studio"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; WorkingDir: "{app}"; IconFilename: "{app}\sgain-studio.ico"; Tasks: desktopicon
 
 [Run]
+; Download Ollama during installation (unless unticked), so the .exe stays small.
+Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\fetch-ollama.ps1"" -AppDir ""{app}"""; StatusMsg: "Downloading Ollama for free local mode (one-time, ~1 GB)..."; Flags: runhidden; Tasks: getollama
 Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; Description: "Open S.Gain Studio"; Flags: postinstall skipifsilent nowait
 
 [UninstallDelete]
@@ -69,3 +74,5 @@ Type: filesandordirs; Name: "{app}\app\out"
 Type: files; Name: "{app}\app\.env"
 ; Downloaded Ollama models live here (OLLAMA_MODELS points into the app).
 Type: filesandordirs; Name: "{app}\models"
+; Ollama is downloaded at install time into runtime\ollama — remove it too.
+Type: filesandordirs; Name: "{app}\runtime\ollama"
