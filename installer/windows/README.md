@@ -8,7 +8,7 @@ with no prerequisites for the end user. End-user instructions are in
 
 | File | Purpose |
 | --- | --- |
-| `build.ps1` | Downloads a portable Node.js and static FFmpeg, runs `npm ci`, lays out `payload\`, then compiles the installer |
+| `build.ps1` | Downloads a portable Node.js, static FFmpeg, portable Ollama and Piper (with a voice), runs `npm ci`, lays out `payload\`, then compiles the installer |
 | `ai-video-agent.iss` | Inno Setup script: files, shortcuts, per-user install, uninstall cleanup |
 | `launchers\*.cmd` | The scripts the Start-menu shortcuts point to; they put the bundled Node and FFmpeg on `PATH`. `local-setup.cmd` also offers to install Ollama/Python with winget for free mode |
 | `launchers\studio.vbs` | Windowless launcher for **AI Video Agent Studio**: starts the local server hidden (no console) and opens it in an Edge app window (falls back to the default browser) |
@@ -19,8 +19,14 @@ The build produces, under `payload\`:
 app\                 the repo + its node_modules (installed with the bundled Node)
 runtime\node\        portable Node.js (node.exe, npm.cmd, ...)
 runtime\ffmpeg\bin\  ffmpeg.exe, ffprobe.exe
-*.cmd                the launchers, copied to the install root
+runtime\ollama\      portable Ollama (ollama.exe) — writing model runtime
+runtime\piper\       portable Piper (piper.exe) + voices\ — voice-over
+*.cmd, *.vbs         the launchers, copied to the install root
 ```
+
+The writing model itself is **not** bundled — S.Gain Studio downloads it on first
+run (into `{app}\models`). Bundling Ollama + Piper makes the installer roughly
+1.5 GB.
 
 `payload\` and `dist\` are build output and are git-ignored.
 

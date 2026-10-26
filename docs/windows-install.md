@@ -1,8 +1,10 @@
 # Windows 11: one-click install
 
 A single `.exe` installs the complete AI Video Agent on Windows 11. It bundles
-everything the core app needs — a private copy of Node.js and FFmpeg plus the
-app and its dependencies — so you don't install anything else first.
+everything for free local mode — Node.js, FFmpeg, **Ollama** and **Piper**, plus
+the app and its dependencies — so you don't install anything else. On first
+launch S.Gain Studio downloads the writing model (a one-time download, inside
+the app).
 
 ## Install
 
@@ -11,10 +13,12 @@ app and its dependencies — so you don't install anything else first.
    page.
 2. Double-click it. It installs per-user (no administrator prompt) to
    `%LOCALAPPDATA%\Programs\AI Video Agent`.
-3. Finish. **S.Gain Studio** opens in its own window (no console) — type
-   a topic and press **Make video**. With no keys yet it makes an offline sample;
-   add your keys under **Settings**, or run **Setup** for the full guided setup
-   (free local tools or paid APIs), which saves to `.env` and tests every credential.
+3. Finish. **S.Gain Studio** opens in its own window (no console), set to free
+   local mode. The first time, a banner offers to **Download the writing model**
+   (one-time, with a progress bar, inside the app). When it's done, type a topic
+   and press **Make video**. You can also tick **Offline sample** to make one
+   instantly, open **Settings** to paste API keys for cloud quality, or run
+   **Setup** for the full guided setup.
 
 Windows SmartScreen may warn about an unrecognised app because the installer
 isn't code-signed. Choose **More info → Run anyway**, or sign the build with
@@ -39,27 +43,29 @@ Finished videos are saved under `%LOCALAPPDATA%\Programs\AI Video Agent\app\out`
 agent's local server with no console window and opens it as an app window (using
 Microsoft Edge's app mode, which is built into Windows 11; it falls back to your
 default browser). You type a topic, press **Make video**, watch the progress, and
-play the result — no command prompt at any point. The **Setup**, **Local Setup**,
-**Start Agent** and other shortcuts are still there for the full agent, posting and
-free-mode tools.
+play the result — no command prompt at any point. **Ollama** (writing) and
+**Piper** (voice) are bundled and run inside the app; the writing model is
+downloaded on first launch from the banner, with a progress bar. The **Setup**,
+**Start Agent** and other shortcuts are still there for the full agent and posting.
 
 ## What the installer does and doesn't include
 
-- **Included:** Node.js, FFmpeg, the app and all its Node dependencies. Making a
-  video works as soon as setup has your API keys (Claude, ElevenLabs, Pexels).
-- **Not included (optional):**
-  - **Full agent on a schedule** needs a Postgres database. Use a free local or
-    hosted one and set `DATABASE_URL`; see [hosting.md](hosting.md).
-  - **Free local mode** (no paid APIs) needs Ollama and Piper. If you pick the
-    free tools during setup, run the **Local Setup (free mode)** shortcut — it
-    offers to install Ollama and Python 3 with winget, then downloads the model
-    and voice. See [local-mode.md](local-mode.md).
+- **Included:** Node.js, FFmpeg, **Ollama** and **Piper** (with a voice), and the
+  app and all its dependencies. Free local mode works out of the box — S.Gain
+  Studio starts Ollama and downloads the writing model on first launch.
+- **Not included:**
+  - **The writing model** (about 9 GB for `qwen3:14b`) is downloaded once, on
+    first launch, from the Studio window. An **Offline sample** needs nothing.
+  - **Cloud quality** (Claude, ElevenLabs, Pexels) needs API keys — paste them in
+    **Settings**, or run **Setup**.
+  - **The agent on a schedule** needs a Postgres database (`DATABASE_URL`); see
+    [hosting.md](hosting.md).
 
 ## Uninstall
 
 Use **Settings → Apps → Installed apps → AI Video Agent → Uninstall**, or the
-**Uninstall** shortcut. This also removes the `.env`, `out\` and `node_modules`
-the app created.
+**Uninstall** shortcut. This also removes the `.env`, `out\`, `node_modules`
+and any downloaded models the app created.
 
 ## Running the agent in the background
 

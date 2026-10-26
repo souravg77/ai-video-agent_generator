@@ -66,6 +66,9 @@ export function renderStudioPage(): string {
   .banner li { margin:4px 0; color:var(--fg-2); }
   .banner .hint { color:var(--muted); font-size:12.5px; }
   .banner .hint b { color:var(--fg-2); }
+  .pbar { height:8px; border-radius:999px; background:var(--panel-2); overflow:hidden; margin:6px 0 4px; }
+  .pbar > i { display:block; height:100%; width:0; background:var(--accent); border-radius:999px; transition:width .2s ease; }
+  .phint { font-family:var(--mono); font-size:11.5px; color:var(--muted); }
 
   .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
@@ -223,8 +226,18 @@ export function renderStudioPage(): string {
         var ul = document.createElement("ul");
         keys.forEach(function (k) { var li = document.createElement("li"); li.textContent = s.reasons[k]; ul.appendChild(li); });
         banner.appendChild(ul);
+        if (s.pullModel) {
+          var pb = document.createElement("div");
+          pb.innerHTML =
+            '<button class="btn primary" id="pullBtn" style="margin:2px 0 4px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg> Download ' + s.model + ' now</button>' +
+            '<div id="pullProg" hidden><div class="pbar"><i id="pbarFill"></i></div><div class="phint" id="pstatus"></div></div>';
+          banner.appendChild(pb);
+          pb.querySelector("#pullBtn").addEventListener("click", function () { startPull(this); });
+        }
         var hint = document.createElement("span"); hint.className = "hint";
-        hint.innerHTML = 'Run the <b>Local Setup (free mode)</b> shortcut to install Ollama and Piper, or open <b>Settings</b> to add API keys. Then press <b>Re-check</b>.';
+        hint.innerHTML = s.pullModel
+          ? 'The app runs Ollama and Piper for you — this is a one-time model download inside the app. Or open <b>Settings</b> to use cloud APIs instead.'
+          : 'The app sets up Ollama and Piper automatically — give it a moment and press <b>Re-check</b>, or open <b>Settings</b> to add API keys.';
         banner.appendChild(hint);
         banner.hidden = false;
       } else {
@@ -296,6 +309,35 @@ export function renderStudioPage(): string {
     busy = false;
     $("makeBtn").disabled = false;
     $("makeBtn").innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 3 14 9-14 9z"/></svg> Make video';
+  }
+
+  // Download the Ollama writing model inside the app, with a live progress bar.
+  function startPull(btn) {
+    var finished = false;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Downloading…';
+    var prog = $("pullProg"); if (prog) prog.hidden = false;
+    var es = new EventSource("/api/pull-model");
+    es.addEventListener("progress", function (e) {
+      var d = JSON.parse(e.data);
+      if ($("pstatus")) $("pstatus").textContent = d.status + (d.percent != null ? " — " + d.percent + "%" : "");
+      if (d.percent != null && $("pbarFill")) $("pbarFill").style.width = d.percent + "%";
+    });
+    es.addEventListener("done", function () {
+      finished = true; es.close();
+      if ($("pbarFill")) $("pbarFill").style.width = "100%";
+      if ($("pstatus")) $("pstatus").textContent = "Downloaded. Checking…";
+      loadStatus();
+    });
+    es.addEventListener("error", function (e) {
+      if (finished) return;
+      var msg = null; try { if (e.data) msg = JSON.parse(e.data).message; } catch (x) {}
+      if (!msg && es.readyState !== 2) return; // transient; EventSource will retry
+      finished = true; es.close();
+      if ($("pstatus")) $("pstatus").textContent = msg || "Download interrupted.";
+      btn.disabled = false;
+      btn.innerHTML = "Retry download";
+    });
   }
 
   // ---- settings ----

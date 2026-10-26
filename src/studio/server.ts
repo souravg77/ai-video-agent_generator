@@ -2,7 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { join, resolve, sep } from "node:path";
 import { config } from "../config.js";
 import { makeVideo } from "../pipeline/index.js";
@@ -36,10 +36,39 @@ function emit(job: Job, event: string, data: unknown) {
   for (const res of job.listeners) sse(res, event, data);
 }
 
+// When writing uses Ollama, make sure its server is running. The Windows
+// installer bundles ollama.exe on PATH, so this starts it automatically and the
+// user never runs `ollama serve`.
+let ollamaStarting = false;
+async function ollamaReachable(): Promise<boolean> {
+  try {
+    const r = await fetch(`${config.OLLAMA_URL.replace(/\/$/, "")}/api/tags`, { signal: AbortSignal.timeout(1000) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+async function ensureOllama(): Promise<void> {
+  if (config.LLM_PROVIDER !== "ollama" || ollamaStarting) return;
+  if (await ollamaReachable()) return;
+  ollamaStarting = true;
+  try {
+    const child = spawn("ollama", ["serve"], { detached: true, stdio: "ignore", windowsHide: true });
+    child.on("error", () => {}); // not installed / wrong OS — leave it to the readiness probe
+    child.unref();
+  } catch {
+    return;
+  }
+  for (let i = 0; i < 12; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+    if (await ollamaReachable()) return;
+  }
+}
+
 // Readiness of the configured providers. Local tools are actually probed (is
 // Ollama running? is the model pulled? is Piper installed?) so the page can warn
 // before a video is attempted, instead of failing halfway through.
-type Probe = { ready: boolean; reason?: string };
+type Probe = { ready: boolean; reason?: string; pullable?: boolean };
 
 async function probeOllama(): Promise<Probe> {
   const base = config.OLLAMA_URL.replace(/\/$/, "");
@@ -49,10 +78,10 @@ async function probeOllama(): Promise<Probe> {
     const data = (await res.json()) as { models?: { name: string }[] };
     const want = config.OLLAMA_MODEL.includes(":") ? config.OLLAMA_MODEL : `${config.OLLAMA_MODEL}:latest`;
     if (!(data.models ?? []).some((m) => m.name === want))
-      return { ready: false, reason: `Ollama is running but the model ${config.OLLAMA_MODEL} isn't downloaded — run the Local Setup shortcut, or \`ollama pull ${config.OLLAMA_MODEL}\`.` };
+      return { ready: false, pullable: true, reason: `The writing model ${config.OLLAMA_MODEL} isn't downloaded yet.` };
     return { ready: true };
   } catch {
-    return { ready: false, reason: `Ollama isn't running at ${config.OLLAMA_URL} — run the Local Setup (free mode) shortcut, or start it with \`ollama serve\`.` };
+    return { ready: false, reason: `Ollama isn't running at ${config.OLLAMA_URL}. It starts with the app — give it a moment and press Re-check, or start it with \`ollama serve\`.` };
   }
 }
 
@@ -106,8 +135,56 @@ async function status() {
     ready: { writing: w.ready, voice: v.ready, footage: f.ready },
     reasons,
     canMakeReal: w.ready && v.ready && f.ready,
+    pullModel: w.pullable === true, // Ollama is up but the model needs downloading
+    model: config.OLLAMA_MODEL,
     language: config.VIDEO_LANGUAGE,
   };
+}
+
+// Streams `ollama pull <model>` progress to the page over SSE (Ollama's HTTP
+// pull API), so the model downloads inside the app with a progress bar.
+async function pullModel(res: ServerResponse): Promise<void> {
+  await ensureOllama();
+  const base = config.OLLAMA_URL.replace(/\/$/, "");
+  try {
+    const r = await fetch(`${base}/api/pull`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: config.OLLAMA_MODEL, stream: true }),
+    });
+    if (!r.ok || !r.body) {
+      sse(res, "error", { message: `Ollama couldn't start the download (${r.status}). Is Ollama running?` });
+      return void res.end();
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl: number;
+      while ((nl = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        try {
+          const o = JSON.parse(line) as { status?: string; completed?: number; total?: number; error?: string };
+          if (o.error) {
+            sse(res, "error", { message: o.error });
+            return void res.end();
+          }
+          const percent = o.total ? Math.round(((o.completed ?? 0) / o.total) * 100) : undefined;
+          sse(res, "progress", { status: o.status ?? "", percent });
+        } catch {}
+      }
+    }
+    sse(res, "done", { model: config.OLLAMA_MODEL });
+    res.end();
+  } catch (err) {
+    sse(res, "error", { message: `Could not reach Ollama to download the model (${(err as Error).message}).` });
+    res.end();
+  }
 }
 
 async function listVideos() {
@@ -209,6 +286,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify(await listVideos()));
   }
+  if (req.method === "GET" && p === "/api/pull-model") {
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
+    return void (await pullModel(res));
+  }
 
   if (req.method === "POST" && p === "/api/make") {
     const body = await readJson(req);
@@ -272,6 +353,9 @@ export function startStudioServer(opts: StudioServerOptions): Promise<Server> {
     server.once("error", (err: NodeJS.ErrnoException) =>
       reject(err.code === "EADDRINUSE" ? new Error(`Port ${opts.port} is already in use. Set STUDIO_PORT to another port.`) : err),
     );
-    server.listen(opts.port, host, () => resolve(server));
+    server.listen(opts.port, host, () => {
+      void ensureOllama(); // start the bundled Ollama in the background if needed
+      resolve(server);
+    });
   });
 }
