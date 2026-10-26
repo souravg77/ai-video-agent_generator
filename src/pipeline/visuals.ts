@@ -60,12 +60,83 @@ async function kenBurnsClip(imgPath: string, outPath: string, seconds: number, f
 // Overridable so tests can stand in for the image server.
 export const imageApi = { fetch: (input: string, init?: RequestInit) => fetch(input, init) };
 
-// Generates a still for one scene from an OpenAI-style image server (FLUX/SDXL on your own
-// GPU via LocalAI, SwarmUI, openedai-images, …) and animates it into a clip. No API, no cost.
-export async function generateLocalVisual(query: string, outPath: string, seconds: number, format: VideoFormat, sceneIndex: number): Promise<void> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// The built-in ComfyUI workflow (API format): a FLUX-schnell checkpoint, 4 steps. Placeholders
+// are substituted per scene. Override it with IMAGE_WORKFLOW for a different model/pipeline.
+function defaultComfyWorkflow(): string {
+  return JSON.stringify({
+    "1": { class_type: "CheckpointLoaderSimple", inputs: { ckpt_name: "__MODEL__" } },
+    "2": { class_type: "CLIPTextEncode", inputs: { text: "__PROMPT__", clip: ["1", 1] } },
+    "3": { class_type: "CLIPTextEncode", inputs: { text: "", clip: ["1", 1] } },
+    "4": { class_type: "EmptySD3LatentImage", inputs: { width: "__WIDTH__", height: "__HEIGHT__", batch_size: 1 } },
+    "5": { class_type: "KSampler", inputs: { seed: "__SEED__", steps: 4, cfg: 1, sampler_name: "euler", scheduler: "simple", denoise: 1, model: ["1", 0], positive: ["2", 0], negative: ["3", 0], latent_image: ["4", 0] } },
+    "6": { class_type: "VAEDecode", inputs: { samples: ["5", 0], vae: ["1", 2] } },
+    "7": { class_type: "SaveImage", inputs: { filename_prefix: "sgain", images: ["6", 0] } },
+  });
+}
+
+// Fills the workflow placeholders. WIDTH/HEIGHT/SEED are numbers, so they're substituted
+// unquoted ("width": "__WIDTH__" -> "width": 768); PROMPT/MODEL are quoted strings.
+function fillWorkflow(tpl: string, prompt: string, w: number, h: number, seed: number, model: string): unknown {
+  const json = tpl
+    .replace(/"__WIDTH__"/g, String(w))
+    .replace(/"__HEIGHT__"/g, String(h))
+    .replace(/"__SEED__"/g, String(seed))
+    .replace(/__PROMPT__/g, prompt.replace(/\\/g, "\\\\").replace(/"/g, '\\"'))
+    .replace(/__MODEL__/g, model.replace(/\\/g, "\\\\").replace(/"/g, '\\"'));
+  return JSON.parse(json);
+}
+
+// Generates one image via ComfyUI's native API: queue a prompt, poll its history, fetch the
+// saved image. Needs only ComfyUI running with a FLUX (or SDXL) model — no shim.
+async function imageViaComfy(prompt: string, w: number, h: number, seed: number): Promise<Buffer> {
+  const base = config.IMAGE_BASE_URL.replace(/\/+$/, "").replace(/\/v1$/, "");
+  const workflow = fillWorkflow(config.IMAGE_WORKFLOW || defaultComfyWorkflow(), prompt, w, h, seed, config.IMAGE_MODEL);
+  let queued: Response;
+  try {
+    queued = await imageApi.fetch(`${base}/prompt`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: workflow, client_id: "sgain-studio" }),
+    });
+  } catch (err) {
+    throw new Error(`Can't reach ComfyUI at ${base} (${(err as Error).message}). Is it running, and is IMAGE_BASE_URL right? See docs/local-footage.md.`);
+  }
+  if (!queued.ok) throw new Error(`ComfyUI rejected the request (${queued.status}): ${(await queued.text()).slice(0, 300)}. Check IMAGE_MODEL matches a checkpoint ComfyUI has.`);
+  const { prompt_id: promptId } = (await queued.json()) as { prompt_id?: string };
+  if (!promptId) throw new Error("ComfyUI didn't return a prompt id.");
+
+  // Poll the history until this prompt has outputs (image generation on a GPU is seconds to tens of seconds).
+  const deadline = Date.now() + 180_000;
+  let outputs: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> | undefined;
+  while (Date.now() < deadline) {
+    await sleep(1500);
+    const hr = await imageApi.fetch(`${base}/history/${promptId}`);
+    if (!hr.ok) continue;
+    const hist = (await hr.json()) as Record<string, { outputs?: Record<string, { images?: { filename: string; subfolder: string; type: string }[] }> }>;
+    const entry = hist[promptId];
+    if (entry?.outputs) {
+      outputs = entry.outputs;
+      break;
+    }
+  }
+  if (!outputs) throw new Error(`ComfyUI didn't finish the image in time for "${prompt.slice(0, 40)}…". A first FLUX run can be slow; try again once the model is loaded.`);
+
+  const img = Object.values(outputs).flatMap((o) => o.images ?? [])[0];
+  if (!img) throw new Error("ComfyUI finished but produced no image — check the workflow has a SaveImage node.");
+  const view = new URL(`${base}/view`);
+  view.searchParams.set("filename", img.filename);
+  view.searchParams.set("subfolder", img.subfolder ?? "");
+  view.searchParams.set("type", img.type ?? "output");
+  const dl = await imageApi.fetch(view.toString());
+  if (!dl.ok) throw new Error(`Couldn't fetch the generated image from ComfyUI (${dl.status}).`);
+  return Buffer.from(await dl.arrayBuffer());
+}
+
+// Generates one image via an OpenAI-style /v1/images/generations server (LocalAI, SwarmUI, …).
+async function imageViaOpenai(prompt: string, size: string): Promise<Buffer> {
   const base = config.IMAGE_BASE_URL.replace(/\/$/, "");
-  const size = config.IMAGE_SIZE || (format === "short" ? "832x1216" : "1216x832");
-  const prompt = `${query}, cinematic photograph, realistic, highly detailed, natural lighting, ${format === "short" ? "vertical" : "horizontal"} composition`;
   let res: Response;
   try {
     res = await imageApi.fetch(`${base}/images/generations`, {
@@ -74,20 +145,30 @@ export async function generateLocalVisual(query: string, outPath: string, second
       body: JSON.stringify({ model: config.IMAGE_MODEL, prompt, n: 1, size, response_format: "b64_json" }),
     });
   } catch (err) {
-    throw new Error(`Can't reach the image server at ${base} (${(err as Error).message}). Is it running, and is IMAGE_BASE_URL right? See docs/open-source-ai.md.`);
+    throw new Error(`Can't reach the image server at ${base} (${(err as Error).message}). Is it running, and is IMAGE_BASE_URL right? See docs/local-footage.md.`);
   }
   if (!res.ok) throw new Error(`The image server returned ${res.status}: ${(await res.text()).slice(0, 300)}. Check IMAGE_MODEL and that it serves /images/generations.`);
   const data = (await res.json()) as { data?: { b64_json?: string; url?: string }[] };
   const first = data.data?.[0];
-  if (!first) throw new Error(`The image server returned no image for "${query}".`);
-
-  let buf: Buffer;
-  if (first.b64_json) buf = Buffer.from(first.b64_json, "base64");
-  else if (first.url) {
+  if (!first) throw new Error(`The image server returned no image for "${prompt.slice(0, 40)}…".`);
+  if (first.b64_json) return Buffer.from(first.b64_json, "base64");
+  if (first.url) {
     const dl = await imageApi.fetch(first.url);
     if (!dl.ok) throw new Error(`Downloading the generated image failed (${dl.status}).`);
-    buf = Buffer.from(await dl.arrayBuffer());
-  } else throw new Error("The image server returned neither image data nor a URL.");
+    return Buffer.from(await dl.arrayBuffer());
+  }
+  throw new Error("The image server returned neither image data nor a URL.");
+}
+
+// Generates a still for one scene from a local image model (FLUX/SDXL on your own GPU) and
+// animates it into a clip. Talks to ComfyUI natively, or any OpenAI image server. No cost.
+export async function generateLocalVisual(query: string, outPath: string, seconds: number, format: VideoFormat, sceneIndex: number): Promise<void> {
+  const size = config.IMAGE_SIZE || (format === "short" ? "832x1216" : "1216x832");
+  const [w, h] = size.split("x").map((n) => parseInt(n, 10) || 0);
+  if (!w || !h) throw new Error(`IMAGE_SIZE "${size}" isn't a WIDTHxHEIGHT like 832x1216.`);
+  const prompt = `${query}, cinematic photograph, realistic, highly detailed, natural lighting, ${format === "short" ? "vertical" : "horizontal"} composition`;
+  const seed = Math.floor(Math.random() * 1e15);
+  const buf = config.IMAGE_API === "comfyui" ? await imageViaComfy(prompt, w, h, seed) : await imageViaOpenai(prompt, size);
 
   const imgPath = outPath.replace(/\.mp4$/i, "") + ".src.png";
   await writeFile(imgPath, buf);

@@ -30,7 +30,7 @@ export const STEP_OPTIONS = {
     { value: "pexels", label: "Pexels API (real stock footage; free key)", needs: "PEXELS_API_KEY from pexels.com/api" },
     { value: "folder", label: "Your own clips folder (free)", needs: "clips in footage/, named by what they show" },
     { value: "generated", label: "Generated backgrounds (free, nothing to set up)", needs: "nothing" },
-    { value: "generated-local", label: "Local AI footage: FLUX/SDXL on your own GPU (free; a real image per scene)", needs: "an OpenAI-style image server running (docs/open-source-ai.md)" },
+    { value: "generated-local", label: "Local AI footage: FLUX/SDXL on your own GPU (free; a real image per scene)", needs: "ComfyUI (or an OpenAI-style image server) running (docs/local-footage.md)" },
   ],
   posting: [
     { value: "api", label: "Post automatically via YouTube and Meta APIs (free; one-time app setup)", needs: "a Google Cloud OAuth client and/or a Meta app (docs/phase0-setup.md)" },

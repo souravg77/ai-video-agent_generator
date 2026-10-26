@@ -20,19 +20,33 @@ export const VideoScriptSchema = z.object({
 export type Scene = z.infer<typeof SceneSchema>;
 export type VideoScript = z.infer<typeof VideoScriptSchema>;
 
-export type ScriptOptions = { format?: VideoFormat; language?: string; hookStyle?: HookStyle };
+export type ScriptOptions = { format?: VideoFormat; language?: string; hookStyle?: HookStyle; minutes?: number };
 
 export function scriptSystemPrompt(opts: ScriptOptions = {}): string {
   const language = opts.language ?? "English";
-  const shape =
-    opts.format === "long"
-      ? `You write scripts for faceless horizontal YouTube videos made from stock footage with a voice-over.
+  const orientation = opts.format === "long" ? "horizontal YouTube videos" : "vertical short videos (YouTube Shorts, Instagram Reels, Facebook Reels)";
+  let shape: string;
+  if (opts.minutes && opts.minutes > 0) {
+    // An explicit length target: ~2.5 words/sec, and roughly one scene per 12 seconds.
+    const secs = Math.round(opts.minutes * 60);
+    const lo = Math.max(3, Math.round(secs / 15));
+    const hi = Math.max(lo + 2, Math.round(secs / 9));
+    const dur = opts.minutes >= 2 ? `about ${opts.minutes} minutes` : `about ${secs} seconds`;
+    shape = `You write scripts for faceless ${orientation} made from footage with a voice-over.
+Target ${dur} of narration at a natural speaking pace (about 2.5 words per second), in ${lo} to ${hi} scenes of 2-3 sentences each.
+Open with a hook that creates curiosity, deliver on it with a clear structure, and end with a short recap.
+Write a description of 3-5 sentences.`;
+  } else {
+    shape =
+      opts.format === "long"
+        ? `You write scripts for faceless horizontal YouTube videos made from stock footage with a voice-over.
 Target 4-8 minutes of narration at a natural speaking pace (about 2.5 words per second), in 25 to 50 scenes of 2-4 sentences each.
 Open with a hook in the first 15 seconds, then deliver on it with a clear structure and a short recap at the end.
 Write a description of 3-5 sentences.`
-      : `You write scripts for faceless vertical short videos (YouTube Shorts, Instagram Reels, Facebook Reels).
+        : `You write scripts for faceless vertical short videos (YouTube Shorts, Instagram Reels, Facebook Reels).
 Target 30-60 seconds of narration at a natural speaking pace (about 2.5 words per second), in 4 to 8 scenes.
 Open with a hook that creates curiosity.`;
+  }
   const lang =
     language.toLowerCase() === "english"
       ? ""

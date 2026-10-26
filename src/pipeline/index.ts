@@ -25,6 +25,7 @@ export type MakeVideoOptions = {
   upload?: boolean;
   format?: VideoFormat; // default VIDEO_FORMAT
   language?: string; // default VIDEO_LANGUAGE
+  minutes?: number; // target narration length; overrides the format's default
   hookStyle?: HookStyle;
   // A finished run folder to translate into `language`, reusing its footage.
   translateFrom?: string;
@@ -76,7 +77,7 @@ export async function makeVideo(opts: MakeVideoOptions): Promise<MakeVideoResult
     } else {
       log("Writing script…");
       if (opts.offline) script = sampleScript(opts.topic);
-      else ({ script, costUsd } = await generateScript(opts.topic, opts.angle, { format, language, hookStyle: opts.hookStyle }));
+      else ({ script, costUsd } = await generateScript(opts.topic, opts.angle, { format, language, minutes: opts.minutes, hookStyle: opts.hookStyle }));
     }
     await writeFile(join(dir, "script.json"), JSON.stringify(script, null, 2));
     if (videoId) {

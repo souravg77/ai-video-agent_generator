@@ -17,12 +17,15 @@ Object.assign(process.env, {
   TTS_BASE_URL: "http://kokoro.test:8880/v1",
   TTS_VOICE: "bf_emma",
   VISUALS_PROVIDER: "generated-local",
+  IMAGE_API: "openai",
   IMAGE_BASE_URL: "http://images.test:8080/v1/",
   IMAGE_MODEL: "flux.1-schnell",
 });
 const { askJson, openai } = await import("../src/lib/llm.js");
 const { synthesizeVoice, speech } = await import("../src/pipeline/voice.js");
 const { fetchVisual, imageApi } = await import("../src/pipeline/visuals.js");
+const { scriptSystemPrompt } = await import("../src/pipeline/script.js");
+const { config } = await import("../src/config.js");
 const { envForChoices, keysToAsk, OPEN_MODEL_SERVERS } = await import("../src/lib/setup-choices.js");
 const { z } = await import("zod/v4");
 
@@ -147,4 +150,50 @@ test("local AI footage: calls the image endpoint and animates the still into a s
 
   imageApi.fetch = async () => new Response("model not found", { status: 404 });
   await assert.rejects(fetchVisual("x", join(dir, "bad.mp4"), 2, { sceneIndex: 0, format: "short" }), /404: model not found\. Check IMAGE_MODEL/);
+});
+
+test("local AI footage via ComfyUI: queues a workflow, polls history, fetches the image into a clip", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "comfy-"));
+  const png = join(dir, "src.png");
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=768x1344:d=1", "-frames:v", "1", png]);
+  const img = await readFile(png);
+
+  // Switch the live config to the ComfyUI path for this test, then restore.
+  const savedApi = config.IMAGE_API, savedUrl = config.IMAGE_BASE_URL, savedModel = config.IMAGE_MODEL;
+  config.IMAGE_API = "comfyui"; config.IMAGE_BASE_URL = "http://comfy.test:8188"; config.IMAGE_MODEL = "flux1-schnell-fp8.safetensors";
+  try {
+    let queued: any = null, polls = 0, viewed = "";
+    imageApi.fetch = async (url, init) => {
+      if (url.endsWith("/prompt")) { queued = JSON.parse(String(init?.body)); return Response.json({ prompt_id: "pid-1" }); }
+      if (url.includes("/history/")) { polls++; return Response.json(polls < 2 ? {} : { "pid-1": { outputs: { "7": { images: [{ filename: "sgain_1.png", subfolder: "", type: "output" }] } } } }); }
+      if (url.includes("/view")) { viewed = url; return new Response(img, { headers: { "content-type": "image/png" } }); }
+      throw new Error("unexpected url " + url);
+    };
+    const out = join(dir, "visual-0.mp4");
+    await fetchVisual("a cozy cottage in the woods", out, 3, { sceneIndex: 0, format: "short" });
+
+    // The workflow carried the model, prompt and numeric size/seed.
+    assert.equal(queued.client_id, "sgain-studio");
+    assert.equal(queued.prompt["1"].inputs.ckpt_name, "flux1-schnell-fp8.safetensors");
+    assert.match(queued.prompt["2"].inputs.text, /cozy cottage in the woods/);
+    assert.equal(queued.prompt["4"].inputs.width, 832);
+    assert.equal(typeof queued.prompt["5"].inputs.seed, "number");
+    assert.ok(polls >= 2, "polled history until outputs appeared");
+    assert.ok(viewed && viewed.includes("filename=sgain_1.png"), "fetched the saved image via /view");
+
+    const info = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:format=duration", "-of", "json", out], { encoding: "utf8" }));
+    assert.equal(info.streams[0].width, 1080);
+    assert.equal(info.streams[0].height, 1920);
+    assert.ok(Math.abs(Number(info.format.duration) - 3) < 0.2);
+  } finally {
+    config.IMAGE_API = savedApi; config.IMAGE_BASE_URL = savedUrl; config.IMAGE_MODEL = savedModel;
+  }
+});
+
+test("script length: an explicit minutes target changes the scene/length brief", () => {
+  const short = scriptSystemPrompt({ format: "long" });
+  const oneMin = scriptSystemPrompt({ format: "long", minutes: 1 });
+  assert.match(short, /4-8 minutes/);
+  assert.match(oneMin, /about 60 seconds/);
+  assert.doesNotMatch(oneMin, /25 to 50 scenes/);
 });
