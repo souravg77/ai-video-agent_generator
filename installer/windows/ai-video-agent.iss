@@ -44,16 +44,17 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 Source: "payload\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Icons]
+Name: "{group}\AI Video Agent Studio"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; WorkingDir: "{app}"; Comment: "Make videos in an app window (no console)"
 Name: "{group}\AI Video Agent - Setup"; Filename: "{app}\setup.cmd"; WorkingDir: "{app}"; Comment: "Connect services or pick free local tools"
 Name: "{group}\AI Video Agent - Local Setup (free mode)"; Filename: "{app}\local-setup.cmd"; WorkingDir: "{app}"; Comment: "Install Ollama and Piper and download the free model and voice"
 Name: "{group}\AI Video Agent - Make a Video"; Filename: "{app}\make-video.cmd"; WorkingDir: "{app}"; Comment: "Turn a topic into a finished video"
 Name: "{group}\AI Video Agent - Start Agent"; Filename: "{app}\start-agent.cmd"; WorkingDir: "{app}"; Comment: "Run the agent and open the review page"
 Name: "{group}\Open Review Page"; Filename: "{app}\open-review.cmd"; WorkingDir: "{app}"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\AI Video Agent"; Filename: "{app}\make-video.cmd"; WorkingDir: "{app}"; Tasks: desktopicon
+Name: "{autodesktop}\AI Video Agent Studio"; Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\setup.cmd"; Description: "Run first-time setup now"; Flags: postinstall skipifsilent shellexec
+Filename: "{sys}\wscript.exe"; Parameters: """{app}\studio.vbs"""; Description: "Open AI Video Agent Studio"; Flags: postinstall skipifsilent nowait
 
 [UninstallDelete]
 ; Remove files the app creates at runtime so nothing is left behind.
