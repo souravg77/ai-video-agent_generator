@@ -14,6 +14,15 @@ No API keys at all: `npm run local:setup`, then `npm run make -- --topic "…"`.
 
 ## Setup
 
+**On Windows 11** you can skip the steps below: download the one-click
+installer (`ai-video-agent-setup-*.exe`) from the
+[Releases](https://github.com/souravg77/ai-video-agent_generator/releases) page.
+It bundles Node.js and FFmpeg, installs the app, and adds Start-menu shortcuts
+for setup, making videos and running the agent. See
+[docs/windows-install.md](docs/windows-install.md).
+
+Otherwise (macOS, Linux, or to run from source):
+
 ```sh
 npm install
 npm run setup          # for each step, pick a free local tool or connect an API; enters keys and signs you in

@@ -7,3 +7,8 @@ brands/*.env
 !brands/example.env
 models/
 footage/
+
+# Windows installer build output
+installer/windows/payload/
+installer/windows/dist/
+installer/windows/.work/
