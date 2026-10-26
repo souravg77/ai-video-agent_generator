@@ -1,11 +1,12 @@
 import { createReadStream, existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { join, resolve, sep } from "node:path";
 import { config } from "../config.js";
 import { makeVideo } from "../pipeline/index.js";
+import { makePhotoVideo } from "../pipeline/photostory.js";
 import { writeEnv } from "../lib/env-file.js";
 import { renderStudioPage, STUDIO_LOGO } from "./page.js";
 
@@ -297,18 +298,20 @@ async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> 
   return body ? (JSON.parse(body) as Record<string, unknown>) : {};
 }
 
-function startJob(topic: string, format: "short" | "long", offline: boolean): Job {
-  const job: Job = { id: randomUUID(), topic, status: "running", logs: [], listeners: new Set() };
+type JobResult = { name: string; title: string; durationSec: number; costUsd: number };
+
+function startJob(label: string, run: (log: (m: string) => void) => Promise<JobResult>): Job {
+  const job: Job = { id: randomUUID(), topic: label, status: "running", logs: [], listeners: new Set() };
   jobs.set(job.id, job);
   const log = (m: string) => {
     job.logs.push(m);
     emit(job, "log", m);
   };
-  makeVideo({ topic, format, offline, upload: false, log })
+  run(log)
     .then((r) => {
       job.status = "done";
-      job.result = { name: r.dir.split(/[\\/]/).pop() ?? "", title: r.script.title, durationSec: r.durationSec, costUsd: r.costUsd };
-      emit(job, "done", job.result);
+      job.result = r;
+      emit(job, "done", r);
     })
     .catch((err: Error) => {
       job.status = "error";
@@ -321,6 +324,29 @@ function startJob(topic: string, format: "short" | "long", offline: boolean): Jo
       setTimeout(() => jobs.delete(job.id), 10 * 60_000); // keep briefly for late reconnects
     });
   return job;
+}
+
+const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "video";
+
+function decodeDataUrl(d: string, fallbackExt: string): { buf: Buffer; ext: string } {
+  const m = /^data:([^;,]*?)(;base64)?,([\s\S]*)$/.exec(d);
+  if (!m) throw new Error("A photo or the audio wasn't a valid upload.");
+  const buf = Buffer.from(m[3] ?? "", "base64");
+  const ext = (m[1] ?? "").split("/")[1]?.replace(/[^a-z0-9]/gi, "").toLowerCase() || fallbackExt;
+  return { buf, ext };
+}
+
+// Larger body reader for the photo/audio uploads (base64 JSON).
+async function readJsonLarge(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += (chunk as Buffer).length;
+    if (size > 80 * 1024 * 1024) throw new Error("Upload too large (max 80 MB).");
+    chunks.push(Buffer.from(chunk));
+  }
+  const body = Buffer.concat(chunks).toString("utf8");
+  return body ? (JSON.parse(body) as Record<string, unknown>) : {};
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse) {
@@ -359,7 +385,46 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (!topic) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "A topic is required." }));
     const format = body.format === "long" ? "long" : "short";
     const offline = body.offline === true;
-    const job = startJob(topic, format, offline);
+    const job = startJob(topic, (log) =>
+      makeVideo({ topic, format, offline, upload: false, log }).then((r) => ({
+        name: r.dir.split(/[\\/]/).pop() ?? "",
+        title: r.script.title,
+        durationSec: r.durationSec,
+        costUsd: r.costUsd,
+      })),
+    );
+    res.writeHead(200, { "content-type": "application/json" });
+    return void res.end(JSON.stringify({ id: job.id }));
+  }
+
+  if (req.method === "POST" && p === "/api/photo-video") {
+    const body = await readJsonLarge(req);
+    const images = (Array.isArray(body.images) ? body.images : []).filter((x): x is string => typeof x === "string").slice(0, 4);
+    const audio = typeof body.audio === "string" ? body.audio : "";
+    if (!images.length || !audio) return void res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "Add at least one photo and a voice-over." }));
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, 100) : "";
+    const format = body.format === "long" ? "long" : "short";
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    const dir = join(config.OUT_DIR, `${stamp}-${slug(title || "photo-video")}`);
+    await mkdir(dir, { recursive: true });
+    const imgPaths: string[] = [];
+    for (const [i, d] of images.entries()) {
+      const { buf, ext } = decodeDataUrl(d, "jpg");
+      const fp = join(dir, `photo-${i}.${ext}`);
+      await writeFile(fp, buf);
+      imgPaths.push(fp);
+    }
+    const { buf: abuf, ext: aext } = decodeDataUrl(audio, "webm");
+    const audioPath = join(dir, `voice.${aext}`);
+    await writeFile(audioPath, abuf);
+    const job = startJob(title || "Photo video", (log) =>
+      makePhotoVideo({ images: imgPaths, audioPath, outDir: dir, title, format, log }).then((r) => ({
+        name: dir.split(/[\\/]/).pop() ?? "",
+        title: title || "Photo video",
+        durationSec: r.durationSec,
+        costUsd: 0,
+      })),
+    );
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify({ id: job.id }));
   }

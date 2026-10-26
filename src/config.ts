@@ -63,6 +63,9 @@ const schema = z.object({
   PEXELS_API_KEY: optional,
   FFMPEG_PATH: z.string().default("ffmpeg"),
   FFPROBE_PATH: z.string().default("ffprobe"),
+  // Experimental: a program that turns a photo + audio into a talking-head video,
+  // called as: AVATAR_CMD <photo> <audio> <output.mp4>. Unset = photo slideshow.
+  AVATAR_CMD: optional,
   DATABASE_URL: optional,
   // Postgres schema for this brand's tables, so several brands can share one database. Defaults to the brand name.
   DB_SCHEMA: z
