@@ -1,7 +1,8 @@
 name: Windows installer
 
 # Builds the self-contained Windows .exe installer. Run it by hand from the
-# Actions tab, or push a version tag (v1.2.3) to build and attach it to a release.
+# Actions tab (it then publishes a GitHub Release so the in-app updater finds it),
+# or push a version tag (v1.2.3) to build and attach it to that tag's release.
 on:
   workflow_dispatch:
     inputs:
@@ -49,8 +50,24 @@ jobs:
           path: installer/windows/dist/*.exe
           if-no-files-found: error
 
-      - name: Attach installer to release
+      - name: Attach installer to release (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: installer/windows/dist/*.exe
+
+      # A manual run publishes a release tagged v<version> at this commit and
+      # attaches the .exe, so S.Gain Studio's "Check for updates" finds it. The
+      # tag is created by GITHUB_TOKEN, which does not retrigger this workflow.
+      - name: Publish release (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
+          files: installer/windows/dist/*.exe
+          fail_on_unmatched_files: true
+          body: |
+            S.Gain Studio / AI Video Agent ${{ steps.ver.outputs.version }}
+
+            Download **ai-video-agent-setup-${{ steps.ver.outputs.version }}.exe** below and run it to install or update on Windows 11. The app's **Settings → Check for updates** also links here.
