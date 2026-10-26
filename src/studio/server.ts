@@ -2,6 +2,7 @@ import { createReadStream, existsSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { join, resolve, sep } from "node:path";
 import { config } from "../config.js";
 import { makeVideo } from "../pipeline/index.js";
@@ -35,17 +36,76 @@ function emit(job: Job, event: string, data: unknown) {
   for (const res of job.listeners) sse(res, event, data);
 }
 
-// readiness of the configured providers, so the page knows whether a real
-// (non-offline) video can be made yet.
-function status() {
-  const writingReady = config.LLM_PROVIDER !== "claude" || Boolean(config.ANTHROPIC_API_KEY);
-  const voiceReady = config.TTS_PROVIDER !== "elevenlabs" || Boolean(config.ELEVENLABS_API_KEY);
-  const footageReady = config.VISUALS_PROVIDER !== "pexels" || Boolean(config.PEXELS_API_KEY);
+// Readiness of the configured providers. Local tools are actually probed (is
+// Ollama running? is the model pulled? is Piper installed?) so the page can warn
+// before a video is attempted, instead of failing halfway through.
+type Probe = { ready: boolean; reason?: string };
+
+async function probeOllama(): Promise<Probe> {
+  const base = config.OLLAMA_URL.replace(/\/$/, "");
+  try {
+    const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(1500) });
+    if (!res.ok) return { ready: false, reason: `Ollama returned ${res.status} at ${config.OLLAMA_URL}.` };
+    const data = (await res.json()) as { models?: { name: string }[] };
+    const want = config.OLLAMA_MODEL.includes(":") ? config.OLLAMA_MODEL : `${config.OLLAMA_MODEL}:latest`;
+    if (!(data.models ?? []).some((m) => m.name === want))
+      return { ready: false, reason: `Ollama is running but the model ${config.OLLAMA_MODEL} isn't downloaded — run the Local Setup shortcut, or \`ollama pull ${config.OLLAMA_MODEL}\`.` };
+    return { ready: true };
+  } catch {
+    return { ready: false, reason: `Ollama isn't running at ${config.OLLAMA_URL} — run the Local Setup (free mode) shortcut, or start it with \`ollama serve\`.` };
+  }
+}
+
+async function probeOpenaiServer(): Promise<Probe> {
+  const base = config.OPENAI_BASE_URL.replace(/\/$/, "");
+  try {
+    // Any HTTP reply (even 401) means the server is reachable.
+    await fetch(`${base}/models`, { signal: AbortSignal.timeout(1500), headers: config.OPENAI_API_KEY ? { authorization: `Bearer ${config.OPENAI_API_KEY}` } : {} });
+    return { ready: true };
+  } catch {
+    return { ready: false, reason: `The model server isn't reachable at ${config.OPENAI_BASE_URL}.` };
+  }
+}
+
+function probePiper(): Probe {
+  if (!existsSync(config.PIPER_VOICE)) return { ready: false, reason: `The Piper voice (${config.PIPER_VOICE}) isn't downloaded — run the Local Setup shortcut.` };
+  if (spawnSync(config.PIPER_PATH, ["--help"], { stdio: "ignore" }).status !== 0)
+    return { ready: false, reason: "Piper isn't installed — run the Local Setup shortcut (it needs Python 3)." };
+  return { ready: true };
+}
+
+async function probeWriting(): Promise<Probe> {
+  if (config.LLM_PROVIDER === "claude") return config.ANTHROPIC_API_KEY ? { ready: true } : { ready: false, reason: "No Claude key — add ANTHROPIC_API_KEY in Settings." };
+  if (config.LLM_PROVIDER === "ollama") return probeOllama();
+  return probeOpenaiServer();
+}
+
+async function probeVoice(): Promise<Probe> {
+  if (config.TTS_PROVIDER === "elevenlabs") return config.ELEVENLABS_API_KEY ? { ready: true } : { ready: false, reason: "No ElevenLabs key — add ELEVENLABS_API_KEY in Settings." };
+  if (config.TTS_PROVIDER === "piper") return probePiper();
+  return { ready: true }; // openai-compatible voice (Kokoro): assume reachable
+}
+
+async function probeFootage(): Promise<Probe> {
+  if (config.VISUALS_PROVIDER === "generated") return { ready: true };
+  if (config.VISUALS_PROVIDER === "pexels") return config.PEXELS_API_KEY ? { ready: true } : { ready: false, reason: "No Pexels key — add PEXELS_API_KEY in Settings, or switch footage to Generated." };
+  if (!existsSync(config.FOOTAGE_DIR)) return { ready: false, reason: `No footage folder (${config.FOOTAGE_DIR}) — add clips, or switch footage to Generated.` };
+  const files = (await readdir(config.FOOTAGE_DIR, { recursive: true })).map(String).filter((f) => /\.(mp4|mov|m4v|webm|mkv)$/i.test(f));
+  return files.length ? { ready: true } : { ready: false, reason: `No clips in ${config.FOOTAGE_DIR}/ — add some, or switch footage to Generated.` };
+}
+
+async function status() {
+  const [w, v, f] = await Promise.all([probeWriting(), probeVoice(), probeFootage()]);
+  const reasons: Record<string, string> = {};
+  if (w.reason) reasons.writing = w.reason;
+  if (v.reason) reasons.voice = v.reason;
+  if (f.reason) reasons.footage = f.reason;
   return {
     mode: config.AGENT_MODE,
     providers: { writing: config.LLM_PROVIDER, voice: config.TTS_PROVIDER, footage: config.VISUALS_PROVIDER },
-    ready: { writing: writingReady, voice: voiceReady, footage: footageReady },
-    canMakeReal: writingReady && voiceReady && footageReady,
+    ready: { writing: w.ready, voice: v.ready, footage: f.ready },
+    reasons,
+    canMakeReal: w.ready && v.ready && f.ready,
     language: config.VIDEO_LANGUAGE,
   };
 }
@@ -143,7 +203,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
   }
   if (req.method === "GET" && p === "/api/status") {
     res.writeHead(200, { "content-type": "application/json" });
-    return void res.end(JSON.stringify(status()));
+    return void res.end(JSON.stringify(await status()));
   }
   if (req.method === "GET" && p === "/api/videos") {
     res.writeHead(200, { "content-type": "application/json" });

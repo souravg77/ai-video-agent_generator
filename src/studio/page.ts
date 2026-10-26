@@ -55,6 +55,17 @@ export function renderStudioPage(): string {
   .pill { display:inline-flex; align-items:center; gap:7px; font-size:12.5px; color:var(--fg-2); background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:6px 12px; }
   .pill .dot { width:8px; height:8px; border-radius:50%; }
   .pill b { color:var(--fg); font-weight:600; }
+  .pill.btn { cursor:pointer; }
+  .pill.btn:hover { background:var(--panel-2); color:var(--fg); }
+
+  .banner { margin:0 0 18px; padding:14px 16px; border-radius:12px; font-size:13.5px;
+    background:color-mix(in srgb, var(--warn) 13%, var(--panel)); border:1px solid color-mix(in srgb, var(--warn) 42%, transparent); }
+  .banner .bt { font-weight:600; color:var(--fg); display:flex; align-items:center; gap:8px; }
+  .banner .bt svg { width:17px; height:17px; color:var(--warn); flex:none; }
+  .banner ul { margin:9px 0 9px; padding-left:20px; }
+  .banner li { margin:4px 0; color:var(--fg-2); }
+  .banner .hint { color:var(--muted); font-size:12.5px; }
+  .banner .hint b { color:var(--fg-2); }
 
   .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:20px; }
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
@@ -115,6 +126,7 @@ export function renderStudioPage(): string {
   </header>
 
   <div class="status" id="statusBar"></div>
+  <div class="banner" id="statusBanner" hidden></div>
 
   <div class="grid">
     <!-- make -->
@@ -190,19 +202,34 @@ export function renderStudioPage(): string {
       var bar = $("statusBar"); bar.innerHTML = "";
       function pill(label, ok, text) {
         var p = document.createElement("span"); p.className = "pill";
-        p.innerHTML = '<span class="dot" style="background:' + (ok ? "var(--good)" : "var(--warn)") + '"></span>' + label + ' <b>' + text + '</b>';
+        p.innerHTML = '<span class="dot" style="background:' + (ok ? "var(--good)" : "var(--warn)") + '"></span>' + label + ' <b></b>';
+        p.querySelector("b").textContent = text;
         bar.appendChild(p);
       }
       pill("Mode", true, s.mode);
       pill("Writing", s.ready.writing, s.providers.writing);
       pill("Voice", s.ready.voice, s.providers.voice);
       pill("Footage", s.ready.footage, s.providers.footage);
-      if (!s.canMakeReal) {
-        $("offline").checked = true;
-        var p = document.createElement("span"); p.className = "pill";
-        p.style.borderColor = "var(--warn)";
-        p.innerHTML = '<span class="dot" style="background:var(--warn)"></span>Some keys missing — using <b>offline sample</b>. Open Settings to add them.';
-        bar.appendChild(p);
+      var rc = document.createElement("button"); rc.type = "button"; rc.className = "pill btn";
+      rc.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 2.6-6.4M3 4v4h4"/></svg> Re-check';
+      rc.addEventListener("click", loadStatus);
+      bar.appendChild(rc);
+
+      var banner = $("statusBanner");
+      var keys = s.reasons ? Object.keys(s.reasons) : [];
+      if (keys.length) {
+        if (!$("offline").checked) $("offline").checked = true; // don't let a real make fail halfway
+        banner.innerHTML = '<div class="bt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2 18.5A2 2 0 0 0 3.7 21.5h16.6A2 2 0 0 0 22 18.5L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>Not ready for a real video yet — the offline sample is on.</div>';
+        var ul = document.createElement("ul");
+        keys.forEach(function (k) { var li = document.createElement("li"); li.textContent = s.reasons[k]; ul.appendChild(li); });
+        banner.appendChild(ul);
+        var hint = document.createElement("span"); hint.className = "hint";
+        hint.innerHTML = 'Run the <b>Local Setup (free mode)</b> shortcut to install Ollama and Piper, or open <b>Settings</b> to add API keys. Then press <b>Re-check</b>.';
+        banner.appendChild(hint);
+        banner.hidden = false;
+      } else {
+        banner.hidden = true;
+        banner.innerHTML = "";
       }
     }).catch(function () {});
   }
