@@ -134,6 +134,29 @@ async function imageViaComfy(prompt: string, w: number, h: number, seed: number)
   return Buffer.from(await dl.arrayBuffer());
 }
 
+// Generates one image via Pollinations.ai — a free, keyless online FLUX service. No GPU, no
+// install; just needs internet. Image generation on request can take a while, so the timeout
+// is generous.
+async function imageViaPollinations(prompt: string, w: number, h: number, seed: number): Promise<Buffer> {
+  const model = /^(flux|turbo)/i.test(config.IMAGE_MODEL) ? config.IMAGE_MODEL : "flux";
+  const url = new URL("https://image.pollinations.ai/prompt/" + encodeURIComponent(prompt));
+  url.searchParams.set("width", String(w));
+  url.searchParams.set("height", String(h));
+  url.searchParams.set("seed", String(seed));
+  url.searchParams.set("model", model);
+  url.searchParams.set("nologo", "true");
+  let res: Response;
+  try {
+    res = await imageApi.fetch(url.toString(), { signal: AbortSignal.timeout(150_000) });
+  } catch (err) {
+    throw new Error(`Couldn't reach the free AI image service (pollinations.ai): ${(err as Error).message}. Check your internet connection, or switch footage to Generated.`);
+  }
+  if (!res.ok) throw new Error(`The free AI image service returned ${res.status} — it may be busy. Try again, or use ComfyUI/Generated.`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  if (buf.length < 1000) throw new Error("The free AI image service returned an empty image — try again.");
+  return buf;
+}
+
 // Generates one image via an OpenAI-style /v1/images/generations server (LocalAI, SwarmUI, …).
 async function imageViaOpenai(prompt: string, size: string): Promise<Buffer> {
   const base = config.IMAGE_BASE_URL.replace(/\/$/, "");
@@ -168,7 +191,10 @@ export async function generateLocalVisual(query: string, outPath: string, second
   if (!w || !h) throw new Error(`IMAGE_SIZE "${size}" isn't a WIDTHxHEIGHT like 832x1216.`);
   const prompt = `${query}, cinematic photograph, realistic, highly detailed, natural lighting, ${format === "short" ? "vertical" : "horizontal"} composition`;
   const seed = Math.floor(Math.random() * 1e15);
-  const buf = config.IMAGE_API === "comfyui" ? await imageViaComfy(prompt, w, h, seed) : await imageViaOpenai(prompt, size);
+  const buf =
+    config.IMAGE_API === "pollinations" ? await imageViaPollinations(prompt, w, h, seed)
+    : config.IMAGE_API === "comfyui" ? await imageViaComfy(prompt, w, h, seed)
+    : await imageViaOpenai(prompt, size);
 
   const imgPath = outPath.replace(/\.mp4$/i, "") + ".src.png";
   await writeFile(imgPath, buf);

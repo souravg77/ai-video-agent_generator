@@ -154,7 +154,7 @@ export function renderStudioPage(): string {
           <button data-format="short" aria-pressed="true">Short (9:16)</button>
           <button data-format="long" aria-pressed="false">Long (16:9)</button>
         </div>
-        <label class="check"><input type="checkbox" id="offline"> Offline sample (no keys)</label>
+        <label class="check"><input type="checkbox" id="offline"> Offline sample <span style="color:var(--muted)">(canned demo — uncheck for a real AI video)</span></label>
       </div>
       <div class="row">
         <span class="fld" style="margin:0 2px 0 0">Length</span>
@@ -240,22 +240,26 @@ export function renderStudioPage(): string {
     <div style="border-top:1px solid var(--line);padding-top:14px">
       <label class="fld" for="footageSel">Footage — what fills the screen</label>
       <select id="footageSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
-        <option value="generated">Generated backgrounds (free, instant, abstract colours)</option>
-        <option value="generated-local">Local AI images — real pictures on your GPU (FLUX/SDXL)</option>
+        <option value="generated-local">AI images — a real photo of each scene (recommended)</option>
+        <option value="generated">Generated backgrounds (abstract colours, no AI)</option>
         <option value="pexels">Pexels stock footage (needs the key above + internet)</option>
         <option value="folder">My own clips folder</option>
       </select>
       <div id="imageCfg" hidden style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
         <div>
-          <label class="fld" for="imgApiSel">Local image server</label>
+          <label class="fld" for="imgApiSel">AI image source</label>
           <select id="imgApiSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
-            <option value="comfyui">ComfyUI (recommended — just install ComfyUI + a FLUX model)</option>
+            <option value="pollinations">Free online — no setup, no GPU (Pollinations · FLUX)</option>
+            <option value="comfyui">ComfyUI on this PC — offline, needs a GPU</option>
             <option value="openai">OpenAI-style image server (LocalAI, SwarmUI, …)</option>
           </select>
         </div>
-        <div><label class="fld" for="imgUrl">Server address — IMAGE_BASE_URL</label><input type="text" id="imgUrl" placeholder="http://localhost:8188" autocomplete="off"></div>
-        <div><label class="fld" for="imgModel">Model / checkpoint — IMAGE_MODEL</label><input type="text" id="imgModel" placeholder="flux1-schnell-fp8.safetensors" autocomplete="off"></div>
-        <p class="hint" style="margin:0">Needs a GPU. Setup guide: <span class="mono">docs/local-footage.md</span> in the project.</p>
+        <p class="hint" id="pollHint" style="margin:0">Free and automatic — a real AI photo for every scene, drawn online. Just needs an internet connection; nothing to install.</p>
+        <div id="imgServerCfg" hidden style="display:flex;flex-direction:column;gap:10px">
+          <div><label class="fld" for="imgUrl">Server address — IMAGE_BASE_URL</label><input type="text" id="imgUrl" placeholder="http://localhost:8188" autocomplete="off"></div>
+          <div><label class="fld" for="imgModel">Model / checkpoint — IMAGE_MODEL</label><input type="text" id="imgModel" placeholder="flux1-schnell-fp8.safetensors" autocomplete="off"></div>
+          <p class="hint" style="margin:0">Setup guide: <span class="mono">docs/local-footage.md</span> in the project.</p>
+        </div>
       </div>
     </div>
     <button class="btn primary" id="saveSettings" style="justify-content:center">Save</button>
@@ -306,13 +310,14 @@ export function renderStudioPage(): string {
       rc.addEventListener("click", loadStatus);
       bar.appendChild(rc);
 
-      // Prefill the Settings footage controls from the live config.
-      if (s.footage && $("footageSel")) { $("footageSel").value = s.footage; toggleImageCfg(); }
+      // Prefill the Settings footage controls from the live config, then sync visibility once.
+      if (s.footage && $("footageSel")) $("footageSel").value = s.footage;
       if (s.image) {
         if ($("imgApiSel") && s.image.api) $("imgApiSel").value = s.image.api;
         if ($("imgUrl")) $("imgUrl").value = s.image.baseUrl || "";
         if ($("imgModel")) $("imgModel").value = s.image.model || "";
       }
+      toggleImageCfg();
 
       var banner = $("statusBanner");
       var keys = s.reasons ? Object.keys(s.reasons) : [];
@@ -451,6 +456,10 @@ export function renderStudioPage(): string {
   function toggleImageCfg() {
     var local = $("footageSel") && $("footageSel").value === "generated-local";
     if ($("imageCfg")) $("imageCfg").hidden = !local;
+    // The free online source needs nothing; ComfyUI/OpenAI need a server address + model.
+    var src = $("imgApiSel") ? $("imgApiSel").value : "pollinations";
+    if ($("imgServerCfg")) $("imgServerCfg").hidden = src === "pollinations";
+    if ($("pollHint")) $("pollHint").hidden = src !== "pollinations";
   }
   function saveSettings() {
     var body = {
@@ -463,6 +472,7 @@ export function renderStudioPage(): string {
       body.IMAGE_API = $("imgApiSel") ? $("imgApiSel").value : "";
       body.IMAGE_BASE_URL = $("imgUrl") ? $("imgUrl").value.trim() : "";
       body.IMAGE_MODEL = $("imgModel") ? $("imgModel").value.trim() : "";
+      if ($("offline")) $("offline").checked = false; // AI footage needs the offline sample off
     }
     fetch("/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) { return r.json(); }).then(function (res) {
@@ -618,7 +628,12 @@ export function renderStudioPage(): string {
   $("topic").addEventListener("keydown", function (e) { if (e.key === "Enter") make(); });
   $("settingsBtn").addEventListener("click", function () { $("settingsDlg").showModal(); });
   $("closeSettings").addEventListener("click", function () { $("settingsDlg").close(); });
-  $("footageSel").addEventListener("change", toggleImageCfg);
+  $("footageSel").addEventListener("change", function () {
+    toggleImageCfg();
+    // Real AI footage only runs with the offline sample off — turn it off when the user picks AI images.
+    if (this.value === "generated-local" && $("offline")) $("offline").checked = false;
+  });
+  $("imgApiSel").addEventListener("change", toggleImageCfg);
   $("saveSettings").addEventListener("click", saveSettings);
   $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
 

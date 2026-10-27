@@ -1,17 +1,38 @@
-# Local AI footage (real images on your GPU)
+# AI footage (a real photo for every scene)
 
 `VISUALS_PROVIDER=generated-local` makes a **real AI picture for every scene** —
-a FLUX or SDXL image of what the narration is about — on your own GPU, then
-animates it with a slow zoom/pan. No API, no cost, works offline. This is the
-option to use if your videos are "just coloured backgrounds": those come from
-`VISUALS_PROVIDER=generated` (procedural gradients, nothing to set up), whereas
-this one shows actual imagery.
+a FLUX image of what the narration is about — and animates it with a slow
+zoom/pan. This is the option to use if your videos are "just coloured
+backgrounds": those come from `VISUALS_PROVIDER=generated` (procedural gradients,
+no AI), whereas this one shows actual imagery.
 
-It needs a **local image model running on your PC**, which needs a reasonably
-capable GPU (NVIDIA with 8 GB+ VRAM is ideal). There's no way around that —
-generating real images requires a real image model somewhere.
+There are three ways to produce the images; pick one in **Settings → Footage →
+“AI images” → AI image source**.
 
-## Recommended: ComfyUI (one app, no shim)
+## Easiest: Free online (no setup, no GPU) — default
+
+`IMAGE_API=pollinations` uses **[Pollinations.ai](https://pollinations.ai)**, a
+free, keyless service that runs **FLUX** (open source) in the cloud and returns
+an image from a URL. **Nothing to install, no GPU, no API key — it just needs an
+internet connection.** This is the default.
+
+1. In the app: **Settings → Footage → “AI images — a real photo of each scene”**.
+2. **AI image source:** “Free online — no setup”.
+3. **Save**, then press **Re-check** (Footage turns green).
+4. **Untick “Offline sample”** (the app does this for you), type a topic, pick a
+   **Length**, and press **Make video** — each scene gets its own AI photo.
+
+```sh
+VISUALS_PROVIDER=generated-local
+IMAGE_API=pollinations
+IMAGE_MODEL=flux            # or: turbo (faster, lower quality)
+```
+
+It depends on a free public service, so it can be slow or busy at times; if an
+image fails the run says so and you can try again. For fully offline or
+higher-volume use, run a model locally with ComfyUI (below).
+
+## Offline on your own GPU: ComfyUI
 
 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) is the standard way to run
 FLUX/SDXL on Windows, and S.Gain Studio talks to it directly.
