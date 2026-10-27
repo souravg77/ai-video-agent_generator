@@ -190,6 +190,35 @@ test("local AI footage via ComfyUI: queues a workflow, polls history, fetches th
   }
 });
 
+test("AI footage via Pollinations: builds the free FLUX URL and animates the image", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "poll-"));
+  const png = join(dir, "src.png");
+  execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "testsrc2=s=832x1216:d=1", "-frames:v", "1", png]);
+  const img = await readFile(png);
+
+  const savedApi = config.IMAGE_API, savedModel = config.IMAGE_MODEL;
+  config.IMAGE_API = "pollinations"; config.IMAGE_MODEL = "flux";
+  try {
+    let url = "";
+    imageApi.fetch = async (u) => { url = String(u); return new Response(img, { headers: { "content-type": "image/png" } }); };
+    const out = join(dir, "visual-0.mp4");
+    await fetchVisual("a tiger on a calcutta street", out, 3, { sceneIndex: 0, format: "short" });
+
+    assert.match(url, /^https:\/\/image\.pollinations\.ai\/prompt\//);
+    assert.match(url, /a%20tiger%20on%20a%20calcutta%20street/);
+    assert.match(url, /width=832/);
+    assert.match(url, /height=1216/);
+    assert.match(url, /model=flux/);
+    assert.match(url, /nologo=true/);
+
+    const info = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "json", out], { encoding: "utf8" }));
+    assert.equal(info.streams[0].width, 1080);
+    assert.equal(info.streams[0].height, 1920);
+  } finally {
+    config.IMAGE_API = savedApi; config.IMAGE_MODEL = savedModel;
+  }
+});
+
 test("script length: an explicit minutes target changes the scene/length brief", () => {
   const short = scriptSystemPrompt({ format: "long" });
   const oneMin = scriptSystemPrompt({ format: "long", minutes: 1 });

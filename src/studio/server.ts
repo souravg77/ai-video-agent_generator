@@ -117,6 +117,8 @@ async function probeVoice(): Promise<Probe> {
 }
 
 async function probeImageServer(): Promise<Probe> {
+  // The free online service needs only internet; assume it's reachable (a real run reports clearly if not).
+  if (config.IMAGE_API === "pollinations") return { ready: true };
   const comfy = config.IMAGE_API === "comfyui";
   const base = config.IMAGE_BASE_URL.replace(/\/+$/, "").replace(comfy ? /\/v1$/ : /$/, "");
   // ComfyUI answers /system_stats; an OpenAI server answers /models. Any HTTP reply means it's up.
@@ -486,7 +488,7 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
       values.VISUALS_PROVIDER = f;
       config.VISUALS_PROVIDER = f;
     }
-    if (str("IMAGE_API") === "comfyui" || str("IMAGE_API") === "openai") {
+    if (["pollinations", "comfyui", "openai"].includes(str("IMAGE_API"))) {
       values.IMAGE_API = str("IMAGE_API");
       config.IMAGE_API = str("IMAGE_API") as typeof config.IMAGE_API;
     }
