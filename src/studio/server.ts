@@ -86,15 +86,32 @@ async function probeOllama(): Promise<Probe> {
   }
 }
 
-async function probeOpenaiServer(): Promise<Probe> {
-  const base = config.OPENAI_BASE_URL.replace(/\/$/, "");
+// Lists the model ids an OpenAI-style server (LM Studio, llama.cpp, vLLM, ...) has available.
+export async function listServerModels(baseUrl: string, apiKey?: string): Promise<string[]> {
+  const base = baseUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}/models`, { signal: AbortSignal.timeout(2500), headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {} });
+  if (!res.ok) throw new Error(`The server answered ${res.status}.`);
+  const data = (await res.json()) as { data?: { id?: string }[] };
+  return (data.data ?? []).map((m) => m.id ?? "").filter(Boolean);
+}
+
+export async function probeOpenaiServer(): Promise<Probe> {
+  let models: string[];
   try {
-    // Any HTTP reply (even 401) means the server is reachable.
-    await fetch(`${base}/models`, { signal: AbortSignal.timeout(1500), headers: config.OPENAI_API_KEY ? { authorization: `Bearer ${config.OPENAI_API_KEY}` } : {} });
-    return { ready: true };
-  } catch {
-    return { ready: false, reason: `The model server isn't reachable at ${config.OPENAI_BASE_URL}.` };
+    models = await listServerModels(config.OPENAI_BASE_URL, config.OPENAI_API_KEY);
+  } catch (err) {
+    // Any HTTP reply that isn't a model list (e.g. 401 from a hosted server) still means it's reachable.
+    if (/answered/.test((err as Error).message)) return { ready: true };
+    return {
+      ready: false,
+      reason: `The model server isn't reachable at ${config.OPENAI_BASE_URL}. If you use LM Studio, open it, load a model and turn on its local server (Developer tab → Start server).`,
+    };
   }
+  // LM Studio lists the models it has; if ours isn't one of them, say which ones it does have.
+  if (models.length && !models.includes(config.OPENAI_MODEL))
+    return { ready: false, reason: `The model server doesn't have "${config.OPENAI_MODEL}". It has: ${models.slice(0, 6).join(", ")}. Pick one in Settings → Writing.` };
+  if (!models.length) return { ready: false, reason: `The model server at ${config.OPENAI_BASE_URL} has no model loaded — load one in LM Studio, then press Re-check.` };
+  return { ready: true };
 }
 
 function probePiper(): Probe {
@@ -155,6 +172,7 @@ async function status() {
     canMakeReal: w.ready && v.ready && f.ready,
     pullModel: w.pullable === true, // Ollama is up but the model needs downloading
     model: config.OLLAMA_MODEL,
+    writing: { provider: config.LLM_PROVIDER, baseUrl: config.OPENAI_BASE_URL, model: config.OPENAI_MODEL, ollamaModel: config.OLLAMA_MODEL },
     language: config.VIDEO_LANGUAGE,
     footage: config.VISUALS_PROVIDER,
     image: { api: config.IMAGE_API, baseUrl: config.IMAGE_BASE_URL, model: config.IMAGE_MODEL },
@@ -393,6 +411,17 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     res.writeHead(200, { "content-type": "application/json" });
     return void res.end(JSON.stringify(await updateInfo()));
   }
+  if (req.method === "GET" && p === "/api/llm-models") {
+    // Settings → Writing → "Find models": ask the given OpenAI-style server what it has loaded.
+    const target = url.searchParams.get("url") || config.OPENAI_BASE_URL;
+    res.writeHead(200, { "content-type": "application/json" });
+    if (!/^https?:\/\//i.test(target)) return void res.end(JSON.stringify({ error: "The address must start with http:// or https://" }));
+    try {
+      return void res.end(JSON.stringify({ models: await listServerModels(target, config.OPENAI_API_KEY) }));
+    } catch (err) {
+      return void res.end(JSON.stringify({ error: `Couldn't reach ${target} (${(err as Error).message}). Is the server running?` }));
+    }
+  }
   if (req.method === "GET" && p === "/api/pull-model") {
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
     return void (await pullModel(res));
@@ -495,6 +524,18 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (str("IMAGE_BASE_URL")) { values.IMAGE_BASE_URL = str("IMAGE_BASE_URL"); config.IMAGE_BASE_URL = str("IMAGE_BASE_URL"); }
     if (str("IMAGE_MODEL")) { values.IMAGE_MODEL = str("IMAGE_MODEL"); config.IMAGE_MODEL = str("IMAGE_MODEL"); }
     if (str("PEXELS_API_KEY")) config.PEXELS_API_KEY = str("PEXELS_API_KEY");
+
+    // The writing engine (Ollama, LM Studio / any OpenAI-style server, or Claude) also applies immediately.
+    const WRITING = ["ollama", "openai-compatible", "claude"] as const;
+    if (WRITING.includes(str("writing") as (typeof WRITING)[number])) {
+      const w = str("writing") as (typeof WRITING)[number];
+      values.LLM_PROVIDER = w;
+      config.LLM_PROVIDER = w;
+      if (w === "ollama") void ensureOllama();
+    }
+    if (str("OPENAI_BASE_URL")) { values.OPENAI_BASE_URL = str("OPENAI_BASE_URL"); config.OPENAI_BASE_URL = str("OPENAI_BASE_URL"); }
+    if (str("OPENAI_MODEL")) { values.OPENAI_MODEL = str("OPENAI_MODEL"); config.OPENAI_MODEL = str("OPENAI_MODEL"); }
+    if (str("ANTHROPIC_API_KEY")) config.ANTHROPIC_API_KEY = str("ANTHROPIC_API_KEY");
 
     if (Object.keys(values).length) writeEnv(values);
     const keysOnly = Object.keys(values).every((k) => k.endsWith("_API_KEY") || k === "AGENT_MODE");

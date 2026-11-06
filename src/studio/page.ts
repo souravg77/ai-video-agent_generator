@@ -233,10 +233,27 @@ export function renderStudioPage(): string {
 <dialog id="settingsDlg">
   <div class="dlg-head"><h3>Settings</h3><button class="btn icon" id="closeSettings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
   <div class="dlg-body">
-    <p class="hint">Paste the keys for the services you use. Leave a field blank to keep what's saved. Local/free mode (Ollama, Piper) is set up from the <b>Local Setup</b> shortcut.</p>
+    <p class="hint">Paste the keys for the services you use. Leave a field blank to keep what's saved. Choose which AI writes the script under <b>Writing</b> below.</p>
     <div><label class="fld" for="k_anthropic">Claude — ANTHROPIC_API_KEY</label><input type="password" id="k_anthropic" placeholder="sk-ant-..." autocomplete="off"></div>
     <div><label class="fld" for="k_eleven">ElevenLabs — ELEVENLABS_API_KEY</label><input type="password" id="k_eleven" placeholder="..." autocomplete="off"></div>
     <div><label class="fld" for="k_pexels">Pexels — PEXELS_API_KEY</label><input type="password" id="k_pexels" placeholder="..." autocomplete="off"></div>
+    <div style="border-top:1px solid var(--line);padding-top:14px">
+      <label class="fld" for="writingSel">Writing — the AI that writes the script</label>
+      <select id="writingSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
+        <option value="ollama">Ollama on this PC (free, installed with the app)</option>
+        <option value="openai-compatible">LM Studio (best on Intel/AMD graphics)</option>
+        <option value="claude">Claude (cloud, needs the key above)</option>
+      </select>
+      <div id="llmCfg" hidden style="margin-top:12px;display:flex;flex-direction:column;gap:10px">
+        <div><label class="fld" for="llmUrl">Server address — OPENAI_BASE_URL</label><input type="text" id="llmUrl" placeholder="http://localhost:1234/v1" autocomplete="off"></div>
+        <div>
+          <label class="fld" for="llmModel">Model — OPENAI_MODEL</label>
+          <div style="display:flex;gap:8px"><input type="text" id="llmModel" list="llmModels" placeholder="qwen3-14b" autocomplete="off" style="flex:1"><button class="btn" type="button" id="findModels">Find models</button></div>
+          <datalist id="llmModels"></datalist>
+        </div>
+        <p class="hint" id="llmNote" style="margin:0">In LM Studio: download a model (e.g. Qwen3 14B), load it, then open the Developer tab and press <b>Start server</b>. On Intel graphics pick the <b>Vulkan</b> runtime. Guide: <span class="mono">docs/open-source-ai.md</span>.</p>
+      </div>
+    </div>
     <div style="border-top:1px solid var(--line);padding-top:14px">
       <label class="fld" for="footageSel">Footage — what fills the screen</label>
       <select id="footageSel" style="width:100%;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;color:var(--fg);font:inherit;padding:11px 13px">
@@ -312,6 +329,12 @@ export function renderStudioPage(): string {
 
       // Prefill the Settings footage controls from the live config, then sync visibility once.
       if (s.footage && $("footageSel")) $("footageSel").value = s.footage;
+      if (s.writing && $("writingSel")) {
+        $("writingSel").value = s.writing.provider;
+        if ($("llmUrl") && !$("llmUrl").value) $("llmUrl").value = s.writing.baseUrl || "";
+        if ($("llmModel") && !$("llmModel").value) $("llmModel").value = s.writing.model || "";
+      }
+      toggleLlmCfg();
       if (s.image) {
         if ($("imgApiSel") && s.image.api) $("imgApiSel").value = s.image.api;
         if ($("imgUrl")) $("imgUrl").value = s.image.baseUrl || "";
@@ -349,6 +372,8 @@ export function renderStudioPage(): string {
         var hint = document.createElement("span"); hint.className = "hint";
         hint.innerHTML = s.pullModel
           ? 'The app runs Ollama and Piper for you — this is a one-time model download inside the app. Or open <b>Settings</b> to use cloud APIs instead.'
+          : s.providers.writing === "openai-compatible" && s.reasons.writing
+          ? 'Start your model server (in LM Studio: load a model, then Developer → <b>Start server</b>) and press <b>Re-check</b>, or change the writing engine in <b>Settings</b>.'
           : 'The app sets up Ollama and Piper automatically — give it a moment and press <b>Re-check</b>, or open <b>Settings</b> to add API keys.';
         banner.appendChild(hint);
         banner.hidden = false;
@@ -461,13 +486,36 @@ export function renderStudioPage(): string {
     if ($("imgServerCfg")) $("imgServerCfg").hidden = src === "pollinations";
     if ($("pollHint")) $("pollHint").hidden = src !== "pollinations";
   }
+  function toggleLlmCfg() {
+    if ($("llmCfg")) $("llmCfg").hidden = !$("writingSel") || $("writingSel").value !== "openai-compatible";
+  }
+  function findModels() {
+    var btn = $("findModels"), note = $("llmNote");
+    btn.disabled = true; btn.textContent = "Looking…";
+    fetch("/api/llm-models?url=" + encodeURIComponent($("llmUrl").value.trim() || "http://localhost:1234/v1"))
+      .then(function (r) { return r.json(); }).then(function (res) {
+        var dl = $("llmModels"); dl.innerHTML = "";
+        if (res.error) { note.textContent = res.error; return; }
+        (res.models || []).forEach(function (m) { var o = document.createElement("option"); o.value = m; dl.appendChild(o); });
+        if (res.models && res.models.length) {
+          if (res.models.indexOf($("llmModel").value) < 0) $("llmModel").value = res.models[0];
+          note.textContent = "Found: " + res.models.join(", ") + ". Pick one, then Save.";
+        } else note.textContent = "The server is running but has no model loaded — load one in LM Studio, then try again.";
+      }).catch(function () { note.textContent = "Couldn't check the server."; })
+      .then(function () { btn.disabled = false; btn.textContent = "Find models"; });
+  }
   function saveSettings() {
     var body = {
       ANTHROPIC_API_KEY: $("k_anthropic").value,
       ELEVENLABS_API_KEY: $("k_eleven").value,
       PEXELS_API_KEY: $("k_pexels").value,
-      footage: $("footageSel") ? $("footageSel").value : ""
+      footage: $("footageSel") ? $("footageSel").value : "",
+      writing: $("writingSel") ? $("writingSel").value : ""
     };
+    if (body.writing === "openai-compatible") {
+      body.OPENAI_BASE_URL = $("llmUrl").value.trim();
+      body.OPENAI_MODEL = $("llmModel").value.trim();
+    }
     if ($("footageSel") && $("footageSel").value === "generated-local") {
       body.IMAGE_API = $("imgApiSel") ? $("imgApiSel").value : "";
       body.IMAGE_BASE_URL = $("imgUrl") ? $("imgUrl").value.trim() : "";
@@ -634,6 +682,8 @@ export function renderStudioPage(): string {
     if (this.value === "generated-local" && $("offline")) $("offline").checked = false;
   });
   $("imgApiSel").addEventListener("change", toggleImageCfg);
+  $("writingSel").addEventListener("change", toggleLlmCfg);
+  $("findModels").addEventListener("click", findModels);
   $("saveSettings").addEventListener("click", saveSettings);
   $("checkUpd").addEventListener("click", function () { loadUpdate(true); });
 

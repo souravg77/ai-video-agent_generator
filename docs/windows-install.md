@@ -51,6 +51,24 @@ and the writing model is downloaded on first launch from the banner, with a
 progress bar. The **Setup**, **Start Agent** and other shortcuts are still there
 for the full agent and posting.
 
+## Intel or AMD graphics: write with LM Studio
+
+The bundled Ollama runs the writing model on the processor when the PC has Intel
+(Arc or Iris Xe) or AMD graphics, which is slow. LM Studio uses those graphics
+cards through Vulkan, so it's the better choice there:
+
+1. Install [LM Studio](https://lmstudio.ai), download a model (for example
+   **Qwen3 14B**, or **Qwen3 8B** on 16 GB of memory), and load it.
+2. In LM Studio's settings, choose the **Vulkan** runtime.
+3. Open the **Developer** tab and press **Start server** (it listens on
+   `http://localhost:1234`).
+4. In S.Gain Studio open **Settings → Writing**, pick **LM Studio**, press
+   **Find models**, choose your model and press **Save**.
+
+The Writing pill turns green once the server is up with that model loaded. More
+detail, including llama.cpp's Vulkan server, is in
+[open-source-ai.md](open-source-ai.md#on-intel-graphics).
+
 ## What the installer does and doesn't include
 
 - **Included (bundled):** Node.js, FFmpeg, **Piper** (with a voice), and the app
