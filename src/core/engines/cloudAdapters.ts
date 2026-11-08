@@ -35,7 +35,7 @@ const NONE: EngineCapabilities = {
 
 export function createUnconfiguredSlot(cfg: CloudSlotConfig): GenerationEngine {
   const fail = async (): Promise<never> => {
-    throw new EngineUnavailableError(cfg.id, `${cfg.name} is not configured. Choose a provider and add its API key in Settings.`);
+    throw new EngineUnavailableError(cfg.id, `${cfg.name} is not configured yet. A provider adapter and API key are needed before it can run.`);
   };
   return {
     id: cfg.id,
